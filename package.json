@@ -1,0 +1,19 @@
+{
+  "name": "turtlecode",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web & npm run dev --workspace=apps/api",
+    "build": "npm run build --workspace=apps/web && npm run build --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "start": "npm run start --workspace=apps/api",
+    "lint": "npm run lint --workspace=apps/web"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}
