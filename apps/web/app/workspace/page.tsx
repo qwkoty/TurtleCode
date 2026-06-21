@@ -83,8 +83,8 @@ export default function WorkspacePage() {
     });
     setInput("");
     setAttachments([]);
-    send(input);
-    simulateTask();
+    const sent = send(input);
+    if (!sent) simulateTask();
   };
 
   const addAttachment = (type: Attachment["type"]) => {

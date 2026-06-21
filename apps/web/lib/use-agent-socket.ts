@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 import { useTurtleCodeStore, AgentStatus } from "@/lib/store";
 
 export type AgentEvent =
@@ -10,7 +11,14 @@ export type AgentEvent =
   | { type: "agent:complete" }
   | { type: "stats:update"; cacheHitRate?: number; tokensSaved?: number; costSaved?: number };
 
-const WS_URL = "ws://localhost:4000";
+function getSocketUrl(): string {
+  const api = process.env.NEXT_PUBLIC_API_URL;
+  if (api) return api;
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "http://localhost:4000";
+  }
+  return "";
+}
 
 const mockFileChanges = [
   {
@@ -34,7 +42,7 @@ const deltas = [
 ];
 
 export function useAgentSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const applyEvent = useCallback((event: AgentEvent) => {
     const s = useTurtleCodeStore.getState();
@@ -104,52 +112,67 @@ export function useAgentSocket() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const addLog = useTurtleCodeStore.getState().addLog;
-    let closed = false;
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
-    try {
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        addLog("已连接到 TurtleCode 后端");
-      };
-
-      ws.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data) as AgentEvent;
-          applyEvent(data);
-        } catch {
-          addLog(`收到无法解析的消息: ${String(ev.data).slice(0, 80)}`);
-        }
-      };
-
-      ws.onclose = () => {
-        if (closed) return;
-        addLog("WebSocket 已断开，启用模拟模式");
-        if (!fallbackTimer) fallbackTimer = setTimeout(simulateTask, 2000);
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
-    } catch {
-      addLog("WebSocket 连接失败，启用模拟模式");
-      if (!fallbackTimer) fallbackTimer = setTimeout(simulateTask, 2000);
+    const url = getSocketUrl();
+    if (!url) {
+      useTurtleCodeStore.getState().addLog("未配置 API 地址，启用模拟模式");
+      return;
     }
 
+    const socket = io(url, {
+      transports: ["websocket"],
+      reconnection: true,
+      timeout: 10000,
+    });
+    socketRef.current = socket;
+
+    const addLog = useTurtleCodeStore.getState().addLog;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let connected = false;
+
+    socket.on("connect", () => {
+      connected = true;
+      addLog("已连接到 TurtleCode 后端");
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+    });
+
+    socket.on("agent:status", (data: { status: AgentStatus }) =>
+      applyEvent({ type: "agent:status", status: data.status }),
+    );
+    socket.on("agent:fileChange", (data: { file: string; original: string; modified: string }) =>
+      applyEvent({ type: "agent:fileChange", ...data }),
+    );
+    socket.on("agent:delta", (data: { content: string }) =>
+      applyEvent({ type: "agent:delta", content: data.content }),
+    );
+    socket.on("agent:complete", () => applyEvent({ type: "agent:complete" }));
+    socket.on("stats:update", (data: { cacheHitRate?: number; tokensSaved?: number; costSaved?: number }) =>
+      applyEvent({ type: "stats:update", ...data }),
+    );
+
+    socket.on("connect_error", () => {
+      if (!connected && !fallbackTimer) {
+        addLog("后端连接失败，启用模拟模式");
+        fallbackTimer = setTimeout(simulateTask, 1500);
+      }
+    });
+
     return () => {
-      closed = true;
       if (fallbackTimer) clearTimeout(fallbackTimer);
-      wsRef.current?.close();
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [applyEvent, simulateTask]);
 
   const send = useCallback((message: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "chat", message }));
+    const socket = socketRef.current;
+    if (socket?.connected) {
+      socket.emit("chat:send", { content: message });
+      return true;
     }
+    return false;
   }, []);
 
   return { send, simulateTask };

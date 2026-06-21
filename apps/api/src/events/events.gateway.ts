@@ -19,10 +19,12 @@ interface ChatSendPayload {
   content?: string;
 }
 
+const corsOrigin = process.env.WEB_CORS_ORIGIN;
+
 @WebSocketGateway({
-  path: '/',
+  path: '/socket.io',
   cors: {
-    origin: 'http://localhost:3000',
+    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : true,
     credentials: true,
   },
 })
