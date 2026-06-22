@@ -3,7 +3,7 @@ import { DeepseekService } from '../deepseek/deepseek.service';
 import { StatsService } from '../stats/stats.service';
 import { ConfigService } from '../config/config.service';
 
-export type AgentStatus = 'thinking' | 'editing' | 'running' | 'complete';
+export type AgentStatus = 'thinking' | 'editing' | 'plugin' | 'complete';
 
 export interface AgentEvent {
   event: string;
@@ -58,12 +58,13 @@ export class AgentService {
     yield this.emit('agent:fileChange', {
       chatId,
       file: 'src/pages/index.tsx',
-      diff: `+ export default function Home() {\n+   return <h1>Hello TurtleCode</h1>;\n+ }`,
+      original: `function Home() {\n  return <h1>Hello</h1>;\n}`,
+      modified: `export default function Home() {\n  return <h1>Hello TurtleCode</h1>;\n}`,
     });
 
     yield this.emit('agent:status', {
       chatId,
-      status: 'running',
+      status: 'plugin',
     });
     await this.delay(300);
 

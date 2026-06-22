@@ -29,7 +29,7 @@ export default function RootLayout({
     <html lang="zh-CN" className={`${jetbrains.variable} ${manrope.variable}`}>
       <body className="antialiased">
         <Navbar />
-        <main className="pt-16">{children}</main>
+        <main className="pt-14 sm:pt-14">{children}</main>
       </body>
     </html>
   );

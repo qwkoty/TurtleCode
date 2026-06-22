@@ -1,4 +1,5 @@
 import {
+  ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -8,7 +9,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ChatService } from '../chat/chat.service';
 import { AgentService } from '../agent/agent.service';
 import { StatsService } from '../stats/stats.service';
@@ -29,7 +30,11 @@ const corsOrigin = process.env.WEB_CORS_ORIGIN;
   },
 })
 export class EventsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   @WebSocketServer()
   server: Server;
@@ -47,8 +52,19 @@ export class EventsGateway
     this.logger.log('WebSocket gateway initialized');
     this.statsInterval = setInterval(() => {
       const stats = this.statsService.getStats('default-project');
-      this.server.emit('stats:update', stats);
-    }, 10000);
+      this.server.emit('stats:update', {
+        cacheHitRate: stats.cacheHitRate,
+        tokensSaved: stats.cacheHits * 120,
+        costSaved: Number((stats.cacheHits * 0.00015).toFixed(4)),
+      });
+    }, 8000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = undefined;
+    }
   }
 
   handleConnection(client: Socket): void {
@@ -62,9 +78,9 @@ export class EventsGateway
   @SubscribeMessage('chat:send')
   async handleChatSend(
     @MessageBody() payload: ChatSendPayload,
-    client: Socket,
+    @ConnectedSocket() client: Socket,
   ): Promise<void> {
-    const content = payload.content?.trim() ?? '';
+    const content = payload?.content?.trim() ?? '';
     if (!content) {
       client.emit('chat:error', { message: 'Content is required' });
       return;

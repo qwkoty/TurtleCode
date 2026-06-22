@@ -36,6 +36,13 @@ export interface Stats {
   cost: number;
 }
 
+export function genId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 interface TurtleCodeStore extends AppConfig, Stats {
   messages: ChatMessage[];
   input: string;
@@ -64,9 +71,9 @@ interface TurtleCodeStore extends AppConfig, Stats {
 }
 
 const initialStats: Stats = {
-  cacheHitRate: 42,
-  tokensSaved: 128_430,
-  costSaved: 3.84,
+  cacheHitRate: 0,
+  tokensSaved: 0,
+  costSaved: 0,
   tokenUsage: 0,
   cost: 0,
 };

@@ -1,8 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings } from "lucide-react";
-import { AgentStatus } from "@/lib/store";
+import type { AgentStatus } from "@/lib/store";
 
 interface TurtleAvatarProps {
   status: AgentStatus;
@@ -10,178 +9,190 @@ interface TurtleAvatarProps {
 }
 
 const sizeMap = {
-  sm: "w-1.5 h-1.5",
-  md: "w-2.5 h-2.5",
-  lg: "w-4 h-4",
+  sm: { wrap: "h-8 w-8", text: "text-[8px]" },
+  md: { wrap: "h-12 w-12", text: "text-[10px]" },
+  lg: { wrap: "h-16 w-16", text: "text-xs" },
 };
 
-const colorMap: Record<string, string> = {
-  h: "bg-emerald-400",
-  e: "bg-slate-950",
-  s: "bg-emerald-500",
-  g: "bg-emerald-700",
-  d: "bg-emerald-900",
-  l: "bg-brand-highlight",
-  ".": "bg-transparent",
+const statusConfig: Record<AgentStatus, { label: string; color: string }> = {
+  idle: { label: "待机", color: "#22d3ee" },
+  thinking: { label: "思考中", color: "#f59e0b" },
+  editing: { label: "编辑中", color: "#3b82f6" },
+  plugin: { label: "调用插件", color: "#a855f7" },
+  complete: { label: "完成", color: "#10b981" },
 };
-
-const headRows = [
-  "...h...",
-  "..hhh..",
-  ".hhehh.",
-  "..hhh..",
-  "...s...",
-];
-
-const bodyRows = [
-  "..s.s..",
-  ".ggggg.",
-  "ggglggg",
-  "ggggggg",
-  "ggggggg",
-  "ggggggg",
-  "ggggggg",
-  ".ggggg.",
-  "..ttt..",
-];
 
 export function TurtleAvatar({ status, size = "md" }: TurtleAvatarProps) {
-  const pixel = sizeMap[size];
-
-  const containerVariants = {
-    idle: {
-      y: [0, -4, 0],
-      transition: { duration: 2, repeat: Infinity, ease: "easeInOut" },
-    },
-    thinking: {
-      y: [0, -2, 0],
-      transition: { duration: 1.2, repeat: Infinity, ease: "easeInOut" },
-    },
-    editing: {
-      y: [0, -5, 0],
-      transition: { duration: 0.35, repeat: Infinity, ease: "linear" },
-    },
-    plugin: {
-      y: [0, -3, 0],
-      transition: { duration: 1.5, repeat: Infinity, ease: "easeInOut" },
-    },
-    complete: {
-      y: [0, -10, 0],
-      scale: [1, 1.12, 1],
-      transition: { duration: 0.6, repeat: 2, ease: "easeOut" },
-    },
-  };
-
-  const headVariants = {
-    idle: { x: 0 },
-    thinking: {
-      x: [-3, 3, -3],
-      transition: { duration: 0.8, repeat: Infinity, ease: "easeInOut" },
-    },
-    editing: { x: 0 },
-    plugin: { x: 0 },
-    complete: { rotate: [0, -10, 10, 0], transition: { duration: 0.5, repeat: 2 } },
-  };
+  const { wrap, text } = sizeMap[size];
+  const { label, color } = statusConfig[status];
+  const isThinking = status === "thinking";
+  const isEditing = status === "editing";
+  const isPlugin = status === "plugin";
+  const isComplete = status === "complete";
 
   return (
-    <div className="relative flex flex-col items-center justify-center">
-      {/* 思考气泡点 */}
-      {status === "thinking" && (
-        <div className="mb-1 flex gap-1">
-          {[0, 1, 2].map((i) => (
-            <motion.div
+    <div className={`relative ${wrap}`}>
+      {/* 外层光晕 */}
+      <motion.div
+        className="absolute inset-[-15%] rounded-full blur-lg"
+        style={{ background: `radial-gradient(circle, ${color}30 0%, transparent 70%)` }}
+        animate={{
+          opacity: isThinking ? [0.4, 0.9, 0.4] : [0.25, 0.55, 0.25],
+          scale: isThinking ? [0.9, 1.15, 0.9] : [0.95, 1.05, 0.95],
+        }}
+        transition={{ duration: isThinking ? 1.4 : 2.6, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      {/* 浮动主体 */}
+      <motion.div
+        className="relative h-full w-full"
+        animate={{
+          y: isThinking ? [0, -3, 2, -3, 0] : isEditing ? [0, -2, 0] : [0, -2, 0],
+        }}
+        transition={{ duration: isThinking ? 1.6 : 3, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <svg viewBox="0 0 64 64" className="relative z-10 h-full w-full">
+          <defs>
+            <linearGradient id={`core-${status}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="100%" stopColor={color} />
+            </linearGradient>
+            <linearGradient id={`shell-${status}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={color} />
+              <stop offset="100%" stopColor="#0f172a" />
+            </linearGradient>
+          </defs>
+
+          {/* 轨道环 - thinking/plugin 时旋转 */}
+          <motion.g
+            style={{ transformOrigin: "32px 32px" }}
+            animate={{
+              rotate: isThinking || isPlugin ? [0, 360] : isComplete ? [0, 360] : 0,
+              scale: isThinking ? [1, 1.08, 1] : 1,
+            }}
+            transition={{
+              rotate: { duration: isThinking ? 3 : 6, repeat: Infinity, ease: "linear" },
+              scale: { duration: 2, repeat: Infinity, ease: "easeInOut" },
+            }}
+          >
+            <ellipse
+              cx="32"
+              cy="32"
+              rx="26"
+              ry="14"
+              fill="none"
+              stroke={color}
+              strokeWidth="0.8"
+              strokeOpacity="0.35"
+            />
+            <ellipse
+              cx="32"
+              cy="32"
+              rx="14"
+              ry="26"
+              fill="none"
+              stroke={color}
+              strokeWidth="0.8"
+              strokeOpacity="0.25"
+            />
+          </motion.g>
+
+          {/* 六边形龟壳 */}
+          <motion.path
+            d="M32 12 L48 22 L48 42 L32 52 L16 42 L16 22 Z"
+            fill="url(#shellGradient)"
+            stroke={color}
+            strokeWidth="1.2"
+            strokeOpacity="0.6"
+            animate={{
+              strokeOpacity: isThinking ? [0.4, 1, 0.4] : [0.5, 0.8, 0.5],
+            }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <defs>
+            <radialGradient id="shellGradient" cx="50%" cy="30%" r="70%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#0f172a" stopOpacity="0.9" />
+            </radialGradient>
+          </defs>
+
+          {/* 内部几何线 */}
+          <g stroke={color} strokeWidth="0.8" strokeOpacity="0.35" strokeLinecap="round">
+            <line x1="32" y1="12" x2="32" y2="52" />
+            <line x1="16" y1="22" x2="48" y2="42" />
+            <line x1="48" y1="22" x2="16" y2="42" />
+          </g>
+
+          {/* 中央核心 */}
+          <motion.circle
+            cx="32"
+            cy="32"
+            r="7"
+            fill={`url(#core-${status})`}
+            animate={{
+              r: isThinking ? [7, 9, 7] : isComplete ? [7, 8, 7] : [7, 7.5, 7],
+              opacity: isThinking ? [0.8, 1, 0.8] : [0.85, 1, 0.85],
+            }}
+            transition={{ duration: isThinking ? 1.2 : 2, repeat: Infinity, ease: "easeInOut" }}
+          />
+
+          {/* 头部 - 上方三角 */}
+          <motion.path
+            d="M26 10 L32 2 L38 10 Z"
+            fill={color}
+            fillOpacity="0.5"
+            animate={{
+              y: isThinking ? [0, -2, 0] : [0, -1, 0],
+              opacity: isThinking ? [0.5, 0.9, 0.5] : [0.5, 0.7, 0.5],
+            }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+          />
+
+          {/* 四肢 - 小菱形 */}
+          {[
+            { x: 8, y: 20 },
+            { x: 52, y: 20 },
+            { x: 12, y: 48 },
+            { x: 48, y: 48 },
+          ].map((p, i) => (
+            <motion.rect
               key={i}
-              className="h-1 w-1 rounded-full bg-brand-highlight"
-              animate={{ opacity: [0.2, 1, 0.2], y: [0, -3, 0] }}
+              x={p.x}
+              y={p.y}
+              width="4"
+              height="4"
+              rx="1"
+              fill={color}
+              fillOpacity="0.45"
+              animate={{
+                scale: isEditing ? [1, 1.4, 1] : [1, 1.15, 1],
+                opacity: isEditing ? [0.45, 0.9, 0.45] : [0.45, 0.7, 0.45],
+              }}
               transition={{
-                duration: 1,
+                duration: 1.2,
                 repeat: Infinity,
-                delay: i * 0.2,
                 ease: "easeInOut",
+                delay: i * 0.15,
               }}
             />
           ))}
-        </div>
-      )}
-
-      <motion.div
-        className="relative flex flex-col items-center"
-        animate={status}
-        variants={containerVariants}
-      >
-        {/* 头部 */}
-        <motion.div
-          className="grid grid-cols-7 gap-0"
-          animate={status}
-          variants={headVariants}
-        >
-          {headRows.map((row, ri) => (
-            <div key={ri} className="contents">
-              {row.split("").map((cell, ci) => (
-                <div
-                  key={`${ri}-${ci}`}
-                  className={`${pixel} ${colorMap[cell] || "bg-transparent"} rounded-[1px]`}
-                />
-              ))}
-            </div>
-          ))}
-        </motion.div>
-
-        {/* 身体 / 壳 */}
-        <div className="relative">
-          <div className="grid grid-cols-7 gap-0">
-            {bodyRows.map((row, ri) => (
-              <div key={ri} className="contents">
-                {row.split("").map((cell, ci) => {
-                  const isTail = cell === "t";
-                  return (
-                    <div
-                      key={`${ri}-${ci}`}
-                      className={`${pixel} ${
-                        isTail ? "bg-emerald-500" : colorMap[cell] || "bg-transparent"
-                      } rounded-[1px]`}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* 插件齿轮徽章 */}
-          {status === "plugin" && (
-            <motion.div
-              className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg ring-2 ring-slate-900/80"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-            >
-              <Settings className="h-3 w-3" />
-            </motion.div>
-          )}
-
-          {/* 编辑模式头盔高光 */}
-          {status === "editing" && (
-            <motion.div
-              className="pointer-events-none absolute inset-0 rounded-lg bg-brand-highlight/10"
-              animate={{ opacity: [0.2, 0.6, 0.2] }}
-              transition={{ duration: 0.6, repeat: Infinity }}
-            />
-          )}
-        </div>
-
-        {/* 完成提示 */}
-        <AnimatePresence>
-          {status === "complete" && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              className="absolute -bottom-5 whitespace-nowrap rounded-full bg-brand-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg"
-            >
-              任务完成
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </svg>
       </motion.div>
+
+      {/* 状态标签 */}
+      <AnimatePresence>
+        {status !== "idle" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.9 }}
+            className={`absolute -bottom-3 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-0.5 ${text} font-medium text-white shadow-lg`}
+            style={{ backgroundColor: color }}
+          >
+            {label}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
-import { useTurtleCodeStore, AgentStatus } from "@/lib/store";
+import { useTurtleCodeStore, genId } from "@/lib/store";
+import type { AgentStatus } from "@/lib/store";
 
 export type AgentEvent =
   | { type: "agent:status"; status: AgentStatus }
   | { type: "agent:fileChange"; file: string; original: string; modified: string }
   | { type: "agent:delta"; content: string }
-  | { type: "agent:complete" }
+  | { type: "agent:complete"; usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; costUsd?: number } }
   | { type: "stats:update"; cacheHitRate?: number; tokensSaved?: number; costSaved?: number };
 
 function getSocketUrl(): string {
@@ -17,29 +18,9 @@ function getSocketUrl(): string {
   if (typeof window !== "undefined" && window.location.hostname === "localhost") {
     return "http://localhost:4000";
   }
+  if (typeof window !== "undefined") return window.location.origin;
   return "";
 }
-
-const mockFileChanges = [
-  {
-    file: "src/utils/cache.ts",
-    original: `export function get(key: string) {\n  return localStorage.getItem(key);\n}\n\nexport function set(key: string, value: string) {\n  localStorage.setItem(key, value);\n}`,
-    modified: `import { createHash } from "crypto";\n\nexport function get(key: string) {\n  const hash = createHash("sha256").update(key).digest("hex");\n  return localStorage.getItem(hash);\n}\n\nexport function set(key: string, value: string) {\n  const hash = createHash("sha256").update(key).digest("hex");\n  localStorage.setItem(hash, value);\n}`,
-  },
-  {
-    file: "src/components/avatar.tsx",
-    original: `function Avatar({ src }) {\n  return <img src={src} />;\n}`,
-    modified: `import Image from "next/image";\n\nfunction Avatar({ src, alt }) {\n  return <Image src={src} alt={alt} width={40} height={40} className="rounded-full" />;\n}`,
-  },
-];
-
-const deltas = [
-  "好的，我来处理这个需求。",
-  "\n\n首先分析了缓存模块，发现直接使用原始 key 存储存在安全隐患。",
-  "\n\n我已经为 key 添加了 SHA-256 哈希，并补全了类型导入。",
-  "\n\n同时把 Avatar 组件替换为 Next.js 的 Image 组件以优化性能。",
-  "\n\n任务已完成，请查看右侧的 diff。",
-];
 
 export function useAgentSocket() {
   const socketRef = useRef<Socket | null>(null);
@@ -57,85 +38,57 @@ export function useAgentSocket() {
         break;
       case "agent:delta":
         s.appendDelta(event.content);
-        s.updateStats({
-          tokenUsage: s.tokenUsage + Math.floor(Math.random() * 8 + 3),
-          cost: s.cost + Math.random() * 0.002,
-        });
         break;
-      case "agent:complete":
+      case "agent:complete": {
+        const usage = event.usage;
+        if (usage) {
+          const total = usage.totalTokens ?? 0;
+          const cost = usage.costUsd ?? 0;
+          const rate = s.cacheHitRate / 100;
+          s.updateStats({
+            tokenUsage: s.tokenUsage + total,
+            cost: s.cost + cost,
+            tokensSaved: s.tokensSaved + Math.floor(total * rate),
+            costSaved: s.costSaved + cost * rate,
+          });
+        }
         s.setAgentStatus("complete");
         s.addLog("任务执行完毕");
+        s.setStreaming(false);
         setTimeout(() => s.setAgentStatus("idle"), 2500);
         break;
+      }
       case "stats:update":
         s.updateStats({
           cacheHitRate: event.cacheHitRate ?? s.cacheHitRate,
           tokensSaved: event.tokensSaved ?? s.tokensSaved,
           costSaved: event.costSaved ?? s.costSaved,
         });
-        s.addLog("统计信息已更新");
         break;
     }
   }, []);
-
-  const simulateTask = useCallback(() => {
-    const s = useTurtleCodeStore.getState();
-    s.setStreaming(true);
-    s.addMessage({
-      id: crypto.randomUUID(),
-      role: "agent",
-      content: "",
-    });
-
-    let step = 0;
-    const file = mockFileChanges[Math.floor(Math.random() * mockFileChanges.length)];
-
-    const interval = setInterval(() => {
-      step++;
-      if (step === 1) applyEvent({ type: "agent:status", status: "thinking" });
-      if (step === 3) applyEvent({ type: "agent:status", status: "editing" });
-      if (step === 4) applyEvent({ type: "agent:fileChange", ...file });
-      if (step >= 5 && step <= 9) {
-        applyEvent({ type: "agent:delta", content: deltas[step - 5] || "." });
-      }
-      if (step === 10) {
-        applyEvent({ type: "stats:update", cacheHitRate: 48, tokensSaved: s.tokensSaved + 1240 });
-      }
-      if (step === 12) {
-        applyEvent({ type: "agent:complete" });
-        s.setStreaming(false);
-        clearInterval(interval);
-      }
-    }, 700);
-  }, [applyEvent]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const url = getSocketUrl();
     if (!url) {
-      useTurtleCodeStore.getState().addLog("未配置 API 地址，启用模拟模式");
+      useTurtleCodeStore.getState().addLog("未配置 API 地址");
       return;
     }
 
     const socket = io(url, {
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
       reconnection: true,
+      reconnectionAttempts: 5,
       timeout: 10000,
     });
     socketRef.current = socket;
 
     const addLog = useTurtleCodeStore.getState().addLog;
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-    let connected = false;
 
     socket.on("connect", () => {
-      connected = true;
       addLog("已连接到 TurtleCode 后端");
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
-      }
     });
 
     socket.on("agent:status", (data: { status: AgentStatus }) =>
@@ -147,24 +100,22 @@ export function useAgentSocket() {
     socket.on("agent:delta", (data: { content: string }) =>
       applyEvent({ type: "agent:delta", content: data.content }),
     );
-    socket.on("agent:complete", () => applyEvent({ type: "agent:complete" }));
+    socket.on("agent:complete", (data: { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; costUsd?: number } }) =>
+      applyEvent({ type: "agent:complete", usage: data.usage }),
+    );
     socket.on("stats:update", (data: { cacheHitRate?: number; tokensSaved?: number; costSaved?: number }) =>
       applyEvent({ type: "stats:update", ...data }),
     );
 
-    socket.on("connect_error", () => {
-      if (!connected && !fallbackTimer) {
-        addLog("后端连接失败，启用模拟模式");
-        fallbackTimer = setTimeout(simulateTask, 1500);
-      }
+    socket.on("connect_error", (err) => {
+      addLog(`连接异常: ${err.message}`);
     });
 
     return () => {
-      if (fallbackTimer) clearTimeout(fallbackTimer);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [applyEvent, simulateTask]);
+  }, [applyEvent]);
 
   const send = useCallback((message: string) => {
     const socket = socketRef.current;
@@ -174,6 +125,40 @@ export function useAgentSocket() {
     }
     return false;
   }, []);
+
+  const simulateTask = useCallback(() => {
+    const s = useTurtleCodeStore.getState();
+    s.setStreaming(true);
+    s.addMessage({
+      id: genId(),
+      role: "agent",
+      content: "",
+    });
+
+    const steps: AgentEvent[] = [
+      { type: "agent:status", status: "thinking" },
+      { type: "agent:status", status: "editing" },
+      {
+        type: "agent:fileChange",
+        file: "src/utils/demo.ts",
+        original: "// demo",
+        modified: "// demo updated",
+      },
+      { type: "agent:status", status: "plugin" },
+      { type: "agent:delta", content: "后端未连接，正在使用本地演示模式。" },
+      {
+        type: "agent:complete",
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
+      },
+    ];
+
+    let i = 0;
+    const interval = setInterval(() => {
+      const event = steps[i++];
+      if (event) applyEvent(event);
+      if (i >= steps.length) clearInterval(interval);
+    }, 600);
+  }, [applyEvent]);
 
   return { send, simulateTask };
 }
