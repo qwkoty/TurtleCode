@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import axios from 'axios';
+
+export type Model = 'deepseek-chat' | 'deepseek-reasoner';
 
 export interface AppConfig {
-  model: 'deepseek-v4-flash' | 'deepseek-v4-pro';
+  model: Model;
   apiKey: string;
   cacheEnabled: boolean;
 }
 
 @Injectable()
 export class ConfigService {
+  private readonly logger = new Logger(ConfigService.name);
   private config: AppConfig = {
-    model: 'deepseek-v4-flash',
-    apiKey: '',
+    model: (process.env.DEFAULT_MODEL as Model) || 'deepseek-chat',
+    apiKey: process.env.DEEPSEEK_API_KEY || '',
     cacheEnabled: true,
   };
 
@@ -19,18 +23,50 @@ export class ConfigService {
   }
 
   setConfig(partial: Partial<AppConfig>): AppConfig {
+    if (partial.model) partial.model = partial.model as Model;
     this.config = { ...this.config, ...partial };
     return this.getConfig();
   }
 
-  testApiKey(): { valid: boolean; message: string } {
-    const key = this.config.apiKey.trim();
+  async testApiKey(draftKey?: string): Promise<{
+    valid: boolean;
+    message: string;
+  }> {
+    const key = (draftKey ?? this.config.apiKey).trim();
     if (!key) {
       return { valid: false, message: 'API key is empty' };
     }
-    if (key.length < 8) {
-      return { valid: false, message: 'API key is too short' };
+    if (!key.startsWith('sk-')) {
+      return { valid: false, message: 'Invalid DeepSeek key format' };
     }
-    return { valid: true, message: 'Mock API key validation passed' };
+
+    try {
+      const res = await axios.post(
+        'https://api.deepseek.com/chat/completions',
+        {
+          model: 'deepseek-chat',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 1,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        },
+      );
+      if (res.status === 200) {
+        return { valid: true, message: 'DeepSeek API 连接成功' };
+      }
+      return { valid: false, message: `Unexpected status ${res.status}` };
+    } catch (error) {
+      this.logger.error('DeepSeek API test failed', error);
+      const message =
+        axios.isAxiosError(error) && error.response
+          ? `DeepSeek error: ${error.response.status} ${JSON.stringify(error.response.data)}`
+          : 'Connection failed';
+      return { valid: false, message };
+    }
   }
 }

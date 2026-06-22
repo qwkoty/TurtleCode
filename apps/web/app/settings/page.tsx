@@ -16,9 +16,9 @@ import {
 import { TurtleAvatar } from "@/components/turtle-avatar";
 import { useTurtleCodeStore, Model } from "@/lib/store";
 
-const models: { value: Model; label: string }[] = [
-  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+const models: { value: Model; label: string; desc: string }[] = [
+  { value: "deepseek-chat", label: "DeepSeek Chat", desc: "通用对话，快速响应，适合日常编码" },
+  { value: "deepseek-reasoner", label: "DeepSeek Reasoner", desc: "推理增强，适合复杂算法与深度分析" },
 ];
 
 export default function SettingsPage() {
@@ -42,21 +42,62 @@ export default function SettingsPage() {
   const [draftKey, setDraftKey] = useState(apiKey);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
 
   useEffect(() => {
     setDraftKey(apiKey);
   }, [apiKey]);
 
-  const handleSave = () => {
+  const getApiBase = () => {
+    if (typeof window === "undefined") return "";
+    return window.location.hostname === "localhost" ? "http://localhost:4000" : window.location.origin;
+  };
+
+  const handleSave = async () => {
     setApiKey(draftKey);
+    try {
+      await fetch(`${getApiBase()}/api/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: draftKey, model }),
+      });
+    } catch {
+      // ignore network errors on save
+    }
   };
 
   const handleTest = async () => {
     setTesting(true);
     setTestResult("idle");
-    await new Promise((r) => setTimeout(r, 1200));
-    setTesting(false);
-    setTestResult(draftKey.length > 4 ? "ok" : "error");
+    setTestMessage("");
+    try {
+      const res = await fetch(`${getApiBase()}/api/config/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: draftKey }),
+      });
+      const data = await res.json();
+      setTestResult(data.valid ? "ok" : "error");
+      setTestMessage(data.message);
+    } catch {
+      setTestResult("error");
+      setTestMessage("请求失败，请检查后端连接");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleModelChange = async (m: Model) => {
+    setModel(m);
+    try {
+      await fetch(`${getApiBase()}/api/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: m }),
+      });
+    } catch {
+      // ignore
+    }
   };
 
   const StatCard = ({
@@ -105,7 +146,7 @@ export default function SettingsPage() {
               {models.map((m) => (
                 <button
                   key={m.value}
-                  onClick={() => setModel(m.value)}
+                  onClick={() => handleModelChange(m.value)}
                   className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all ${
                     model === m.value
                       ? "border-brand-primary bg-brand-primary/10 ring-1 ring-brand-primary/40"
@@ -114,11 +155,7 @@ export default function SettingsPage() {
                 >
                   <div>
                     <div className="font-medium text-white">{m.label}</div>
-                    <div className="text-xs text-slate-400">
-                      {m.value === "deepseek-v4-flash"
-                        ? "快速响应，适合日常编码"
-                        : "最强能力，适合复杂任务"}
-                    </div>
+                    <div className="text-xs text-slate-400">{m.desc}</div>
                   </div>
                   {model === m.value && (
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary">
@@ -146,7 +183,7 @@ export default function SettingsPage() {
                   className="w-full rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/50"
                 />
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleTest}
                   disabled={testing}
@@ -163,10 +200,12 @@ export default function SettingsPage() {
                   保存
                 </button>
                 {testResult === "ok" && (
-                  <span className="text-xs text-emerald-400">连接成功</span>
+                  <span className="text-xs text-emerald-400">{testMessage || "连接成功"}</span>
                 )}
                 {testResult === "error" && (
-                  <span className="text-xs text-rose-400">连接失败，请检查密钥</span>
+                  <span className="max-w-[200px] truncate text-xs text-rose-400">
+                    {testMessage || "连接失败，请检查密钥"}
+                  </span>
                 )}
               </div>
             </div>
@@ -208,7 +247,7 @@ export default function SettingsPage() {
           <StatCard
             icon={BarChart3}
             label="缓存命中率"
-            value={`${cacheHitRate}%`}
+            value={`${cacheHitRate.toFixed(1)}%`}
             color="text-brand-highlight"
           />
           <StatCard
@@ -220,7 +259,7 @@ export default function SettingsPage() {
           <StatCard
             icon={Coins}
             label="节省成本"
-            value={`$${costSaved.toFixed(2)}`}
+            value={`$${costSaved.toFixed(4)}`}
             color="text-emerald-400"
           />
         </aside>

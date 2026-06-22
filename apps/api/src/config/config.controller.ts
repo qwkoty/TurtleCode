@@ -13,11 +13,18 @@ export class ConfigController {
 
   @Post()
   updateConfig(@Body() body: Partial<AppConfig>): AppConfig {
-    return this.configService.setConfig(body);
+    // 不要把 apiKey 回显给前端
+    const update: Partial<AppConfig> = {};
+    if (body.model) update.model = body.model;
+    if (body.cacheEnabled !== undefined) update.cacheEnabled = body.cacheEnabled;
+    if (body.apiKey !== undefined) update.apiKey = body.apiKey;
+    return this.configService.setConfig(update);
   }
 
   @Post('test')
-  testApiKey(): { valid: boolean; message: string } {
-    return this.configService.testApiKey();
+  async testApiKey(
+    @Body() body: { apiKey?: string },
+  ): Promise<{ valid: boolean; message: string }> {
+    return this.configService.testApiKey(body?.apiKey);
   }
 }

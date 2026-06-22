@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type Model = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type Model = "deepseek-chat" | "deepseek-reasoner";
 
 export type AgentStatus = "idle" | "thinking" | "editing" | "plugin" | "complete";
 
@@ -81,7 +81,7 @@ const initialStats: Stats = {
 export const useTurtleCodeStore = create<TurtleCodeStore>()(
   persist(
     (set) => ({
-      model: "deepseek-v4-flash",
+      model: "deepseek-chat",
       apiKey: "",
       enableCache: true,
       enableSemanticCache: false,

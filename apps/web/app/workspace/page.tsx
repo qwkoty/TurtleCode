@@ -9,11 +9,8 @@ import {
   Image as ImageIcon,
   FileText,
   X,
-  Github,
   Cpu,
-  Coins,
   BarChart3,
-  Zap,
   Terminal,
   FolderGit2,
   Bot,
@@ -101,7 +98,7 @@ export default function WorkspacePage() {
     ]);
   };
 
-  const modelLabel = model === "deepseek-v4-flash" ? "DeepSeek V4 Flash" : "DeepSeek V4 Pro";
+  const modelLabel = model === "deepseek-reasoner" ? "DeepSeek Reasoner" : "DeepSeek Chat";
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100vh-3.5rem)]">
@@ -229,19 +226,8 @@ export default function WorkspacePage() {
               </div>
             </div>
 
-            <div className="mt-2 flex flex-col gap-1 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap gap-3">
-                <span className="flex items-center gap-1">
-                  <Zap className="h-3 w-3 text-brand-highlight" /> Token {tokenUsage.toLocaleString()}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Coins className="h-3 w-3 text-emerald-400" /> ${cost.toFixed(4)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <BarChart3 className="h-3 w-3 text-brand-accent" /> 缓存 {cacheHitRate.toFixed(1)}%
-                </span>
-              </div>
-              <span className="hidden sm:inline">按 Enter 发送，Shift + Enter 换行</span>
+            <div className="mt-2 hidden text-[10px] text-slate-500 sm:block">
+              按 Enter 发送，Shift + Enter 换行
             </div>
           </div>
         </section>
@@ -293,20 +279,17 @@ export default function WorkspacePage() {
         <div className="flex items-center gap-3 sm:gap-4">
           <span className="flex items-center gap-1.5">
             <Cpu className="h-3 w-3 text-brand-highlight" />
-            <span className="hidden sm:inline">{modelLabel}</span>
+            <span>{modelLabel}</span>
           </span>
           <span className="hidden sm:inline">Token {tokenUsage.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center gap-3 sm:gap-4">
           <span className="flex items-center gap-1">
             <BarChart3 className="h-3 w-3" /> {cacheHitRate.toFixed(1)}%
           </span>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-4">
           <span className="hidden items-center gap-1.5 sm:flex">
-            <Github className="h-3 w-3" /> GitHub 已连接
-          </span>
-          <span className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${statusColor[agentStatus]}`} />
-            <span className="hidden sm:inline">{statusLabel[agentStatus]}</span>
+            {statusLabel[agentStatus]}
           </span>
           <TurtleAvatar status={agentStatus} size="sm" />
         </div>

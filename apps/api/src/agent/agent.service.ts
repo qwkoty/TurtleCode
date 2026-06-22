@@ -23,7 +23,7 @@ export class AgentService {
     projectId: string,
     prompt: string,
   ): AsyncGenerator<AgentEvent> {
-    const { model } = this.config.getConfig();
+    const { model, apiKey } = this.config.getConfig();
 
     yield this.emit('agent:status', {
       chatId,
@@ -39,15 +39,24 @@ export class AgentService {
       costUsd: number;
     } | null = null;
 
-    for await (const chunk of this.deepseek.streamChat(prompt, model)) {
-      if (chunk.usage) {
-        usage = chunk.usage;
+    try {
+      for await (const chunk of this.deepseek.streamChat(prompt, model, apiKey)) {
+        if (chunk.usage) {
+          usage = chunk.usage;
+        }
+        if (chunk.chunk) {
+          fullResponseParts.push(chunk.chunk);
+          yield this.emit('agent:delta', { chatId, content: chunk.chunk });
+        }
       }
-      if (chunk.chunk) {
-        fullResponseParts.push(chunk.chunk);
-        yield this.emit('agent:delta', { chatId, content: chunk.chunk });
-      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'DeepSeek request failed';
+      yield this.emit('agent:error', { chatId, message });
+      return;
     }
+
+    const responseText = fullResponseParts.join('');
+    const codeBlock = this.extractFirstCodeBlock(responseText);
 
     yield this.emit('agent:status', {
       chatId,
@@ -55,12 +64,14 @@ export class AgentService {
     });
     await this.delay(300);
 
-    yield this.emit('agent:fileChange', {
-      chatId,
-      file: 'src/pages/index.tsx',
-      original: `function Home() {\n  return <h1>Hello</h1>;\n}`,
-      modified: `export default function Home() {\n  return <h1>Hello TurtleCode</h1>;\n}`,
-    });
+    if (codeBlock) {
+      yield this.emit('agent:fileChange', {
+        chatId,
+        file: codeBlock.file,
+        original: '// 原文件内容未加载\n',
+        modified: codeBlock.content,
+      });
+    }
 
     yield this.emit('agent:status', {
       chatId,
@@ -88,4 +99,15 @@ export class AgentService {
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  private extractFirstCodeBlock(text: string): { file: string; content: string } | null {
+    const match = text.match(/```[\w]*\n?([\s\S]*?)```/);
+    if (!match) return null;
+    const content = match[1].trim();
+    const firstLine = content.split('\n')[0];
+    const pathMatch = firstLine.match(/\/\/\s*([\w\/\.\-]+)/);
+    const file = pathMatch ? pathMatch[1] : 'src/suggested-change.ts';
+    return { file, content };
+  }
 }
+

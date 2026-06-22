@@ -24,4 +24,13 @@ export class SkillsController {
   ): InstalledSkill {
     return this.skillsService.install(id, slug, body?.config);
   }
+
+  @Post('projects/:id/skills/:slug/toggle')
+  toggle(
+    @Param('id') id: string,
+    @Param('slug') slug: string,
+    @Body() body: { enabled?: boolean },
+  ): InstalledSkill {
+    return this.skillsService.toggle(id, slug, body?.enabled ?? true);
+  }
 }

@@ -10,6 +10,7 @@ export type AgentEvent =
   | { type: "agent:fileChange"; file: string; original: string; modified: string }
   | { type: "agent:delta"; content: string }
   | { type: "agent:complete"; usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; costUsd?: number } }
+  | { type: "agent:error"; message: string }
   | { type: "stats:update"; cacheHitRate?: number; tokensSaved?: number; costSaved?: number };
 
 function getSocketUrl(): string {
@@ -38,6 +39,11 @@ export function useAgentSocket() {
         break;
       case "agent:delta":
         s.appendDelta(event.content);
+        break;
+      case "agent:error":
+        s.addLog(`错误: ${event.message}`);
+        s.setStreaming(false);
+        s.setAgentStatus("idle");
         break;
       case "agent:complete": {
         const usage = event.usage;
@@ -102,6 +108,9 @@ export function useAgentSocket() {
     );
     socket.on("agent:complete", (data: { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; costUsd?: number } }) =>
       applyEvent({ type: "agent:complete", usage: data.usage }),
+    );
+    socket.on("agent:error", (data: { message?: string }) =>
+      applyEvent({ type: "agent:error", message: data.message ?? "未知错误" }),
     );
     socket.on("stats:update", (data: { cacheHitRate?: number; tokensSaved?: number; costSaved?: number }) =>
       applyEvent({ type: "stats:update", ...data }),

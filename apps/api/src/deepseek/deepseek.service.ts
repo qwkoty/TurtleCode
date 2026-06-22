@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import type { Model } from '../config/config.service';
 
 export interface ChatChunk {
   chunk: string;
@@ -10,45 +11,142 @@ export interface ChatChunk {
   };
 }
 
-const MOCK_RESPONSES: Record<string, string> = {
-  default:
-    "I'll help you with that. Let me analyze the codebase and make the necessary changes. First, I'll look at the current structure, then propose an edit, and finally verify it works.",
-};
+interface DeepSeekStreamChoice {
+  delta: { content?: string; role?: string };
+  index: number;
+  finish_reason: string | null;
+}
+
+interface DeepSeekStreamChunk {
+  id: string;
+  choices: DeepSeekStreamChoice[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
 
 @Injectable()
 export class DeepseekService {
+  private readonly logger = new Logger(DeepseekService.name);
+
   async *streamChat(
     prompt: string,
-    model: 'deepseek-v4-flash' | 'deepseek-v4-pro',
+    model: Model,
+    apiKey: string,
   ): AsyncGenerator<ChatChunk> {
-    const text = MOCK_RESPONSES.default;
-    const words = text.split(' ');
-    const chunkSize = 3;
-
-    for (let i = 0; i < words.length; i += chunkSize) {
-      const slice = words.slice(i, i + chunkSize);
-      yield { chunk: slice.join(' ') + ' ' };
-      await this.delay(80);
+    if (!apiKey) {
+      throw new Error('DeepSeek API key is not configured');
     }
 
-    const usage = this.calculateUsage(prompt, text, model);
-    yield { chunk: '', usage };
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are TurtleCode, an AI coding agent. Help the user with coding tasks. When you provide code changes, wrap them in a markdown code block and put the target file path as the first line comment, e.g. // src/utils/example.ts.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`DeepSeek API error ${response.status}: ${text}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('DeepSeek response has no body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let fullText = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (!trimmed.startsWith('data:')) continue;
+
+          try {
+            const json: DeepSeekStreamChunk = JSON.parse(trimmed.slice(5).trim());
+
+            if (json.usage) {
+              promptTokens = json.usage.prompt_tokens;
+              completionTokens = json.usage.completion_tokens;
+              totalTokens = json.usage.total_tokens;
+            }
+
+            const delta = json.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullText += delta;
+              yield { chunk: delta };
+            }
+          } catch {
+            // ignore malformed JSON lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (totalTokens === 0) {
+      const estimated = this.calculateUsage(prompt, fullText, model);
+      promptTokens = estimated.promptTokens;
+      completionTokens = estimated.completionTokens;
+      totalTokens = estimated.totalTokens;
+    }
+
+    const costUsd = this.calculateCost(totalTokens, model);
+    yield {
+      chunk: '',
+      usage: { promptTokens, completionTokens, totalTokens, costUsd },
+    };
   }
 
   calculateUsage(
     prompt: string,
     completion: string,
-    model: 'deepseek-v4-flash' | 'deepseek-v4-pro',
-  ): ChatChunk['usage'] {
+    model: Model,
+  ): { promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number } {
     const promptTokens = Math.ceil(prompt.length / 4);
     const completionTokens = Math.ceil(completion.length / 4);
     const totalTokens = promptTokens + completionTokens;
-    const rate = model === 'deepseek-v4-pro' ? 0.000003 : 0.0000005;
-    const costUsd = Number((totalTokens * rate).toFixed(6));
+    const costUsd = this.calculateCost(totalTokens, model);
     return { promptTokens, completionTokens, totalTokens, costUsd };
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  calculateCost(totalTokens: number, model: Model): number {
+    // DeepSeek official pricing (input + output averaged per token)
+    // deepseek-chat: ~$0.0005 / 1K tokens
+    // deepseek-reasoner: ~$0.0028 / 1K tokens
+    const rate = model === 'deepseek-reasoner' ? 0.0000028 : 0.0000005;
+    return Number((totalTokens * rate).toFixed(6));
   }
 }

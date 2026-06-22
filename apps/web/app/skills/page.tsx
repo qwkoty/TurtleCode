@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Github,
@@ -17,6 +17,7 @@ import {
   Download,
   Check,
   Search,
+  Loader2,
 } from "lucide-react";
 import { TurtleAvatar } from "@/components/turtle-avatar";
 import { useTurtleCodeStore } from "@/lib/store";
@@ -32,10 +33,10 @@ type Category =
   | "MCP";
 
 interface Skill {
-  id: string;
+  slug: string;
   name: string;
   description: string;
-  category: Exclude<Category, "全部">;
+  category?: string;
   version: string;
   installed: boolean;
   enabled: boolean;
@@ -53,96 +54,70 @@ const categories: Category[] = [
 ];
 
 const iconMap: Record<string, React.ElementType> = {
-  GitHub: Github,
-  Docker: Box,
-  Browser: Globe,
-  Database: Database,
-  "Linux Terminal": Terminal,
-  MCP: Cpu,
-  Figma: Figma,
-  Deploy: Rocket,
+  github: Github,
+  docker: Box,
+  browser: Globe,
+  database: Database,
+  terminal: Terminal,
+  mcp: Cpu,
+  figma: Figma,
+  deploy: Rocket,
 };
 
-const initialSkills: Skill[] = [
-  {
-    id: "github",
-    name: "GitHub",
-    description: "代码仓库管理、PR 创建与代码审查",
-    category: "Development Tools",
-    version: "1.2.0",
-    installed: true,
-    enabled: true,
-  },
-  {
-    id: "docker",
-    name: "Docker",
-    description: "容器构建、镜像管理与本地运行",
-    category: "Development Tools",
-    version: "2.1.0",
-    installed: true,
-    enabled: true,
-  },
-  {
-    id: "browser",
-    name: "Browser",
-    description: "自动化浏览器操作与页面抓取",
-    category: "Browser",
-    version: "0.9.0",
-    installed: false,
-    enabled: false,
-  },
-  {
-    id: "database",
-    name: "Database",
-    description: "SQL / NoSQL 数据库查询与迁移",
-    category: "Database",
-    version: "1.0.0",
-    installed: true,
-    enabled: false,
-  },
-  {
-    id: "linux-terminal",
-    name: "Linux Terminal",
-    description: "在 Linux 沙箱中执行 shell 命令",
-    category: "Development Tools",
-    version: "1.5.0",
-    installed: true,
-    enabled: true,
-  },
-  {
-    id: "mcp",
-    name: "MCP",
-    description: "模型上下文协议服务端与客户端",
-    category: "MCP",
-    version: "0.3.0",
-    installed: true,
-    enabled: true,
-  },
-  {
-    id: "figma",
-    name: "Figma",
-    description: "读取设计稿、导出资源与标注",
-    category: "Design",
-    version: "3.0.0",
-    installed: false,
-    enabled: false,
-  },
-  {
-    id: "deploy",
-    name: "Deploy",
-    description: "一键部署到 Vercel / Docker / K8s",
-    category: "Deploy",
-    version: "1.0.0",
-    installed: false,
-    enabled: false,
-  },
-];
+const DEFAULT_VERSION = "1.0.0";
+const PROJECT_ID = "default-project";
+
+function getApiBase() {
+  if (typeof window === "undefined") return "";
+  return window.location.hostname === "localhost" ? "http://localhost:4000" : window.location.origin;
+}
 
 export default function SkillsPage() {
-  const [skills, setSkills] = useState<Skill[]>(initialSkills);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Category>("全部");
   const [query, setQuery] = useState("");
   const agentStatus = useTurtleCodeStore((s) => s.agentStatus);
+
+  useEffect(() => {
+    const fetchSkills = async () => {
+      try {
+        const [allRes, installedRes] = await Promise.all([
+          fetch(`${getApiBase()}/api/skills`),
+          fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills`),
+        ]);
+        const all = (await allRes.json()) as Array<{
+          slug: string;
+          name: string;
+          description: string;
+          category?: string;
+          icon: string;
+        }>;
+        const installed = (await installedRes.json()) as Array<{
+          slug: string;
+          enabled: boolean;
+        }>;
+        const installedMap = new Map(installed.map((s) => [s.slug, s.enabled]));
+
+        setSkills(
+          all.map((s) => ({
+            slug: s.slug,
+            name: s.name,
+            description: s.description,
+            category: s.category ?? "Agent",
+            version: DEFAULT_VERSION,
+            installed: installedMap.has(s.slug),
+            enabled: installedMap.get(s.slug) ?? false,
+          })),
+        );
+      } catch {
+        setSkills([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    void fetchSkills();
+  }, []);
 
   const installed = skills.filter((s) => s.installed);
 
@@ -154,16 +129,33 @@ export default function SkillsPage() {
     return matchCategory && matchQuery;
   });
 
-  const toggleEnabled = (id: string) => {
-    setSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s))
-    );
+  const toggleEnabled = async (id: string, enabled: boolean) => {
+    try {
+      await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${id}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !enabled }),
+      });
+      setSkills((prev) =>
+        prev.map((s) => (s.slug === id ? { ...s, enabled: !s.enabled } : s))
+      );
+    } catch {
+      // ignore
+    }
   };
 
-  const install = (id: string) => {
-    setSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, installed: true, enabled: true } : s))
-    );
+  const install = async (id: string) => {
+    try {
+      await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      setSkills((prev) =>
+        prev.map((s) => (s.slug === id ? { ...s, installed: true, enabled: true } : s))
+      );
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -180,10 +172,10 @@ export default function SkillsPage() {
               <div className="text-xs text-slate-500">暂无已安装技能</div>
             )}
             {installed.map((skill) => {
-              const Icon = iconMap[skill.name] || Wrench;
+              const Icon = iconMap[skill.slug] || Wrench;
               return (
                 <div
-                  key={skill.id}
+                  key={skill.slug}
                   className="flex items-center justify-between rounded-xl border border-slate-700/30 bg-slate-900/40 p-3"
                 >
                   <div className="flex items-center gap-3">
@@ -197,7 +189,7 @@ export default function SkillsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => toggleEnabled(skill.id)}
+                      onClick={() => toggleEnabled(skill.slug, skill.enabled)}
                       className={`rounded-lg p-1.5 transition-colors ${
                         skill.enabled
                           ? "bg-emerald-500/15 text-emerald-400"
@@ -257,48 +249,55 @@ export default function SkillsPage() {
         </div>
 
         {/* 卡片网格 */}
-        <div className="scrollbar-thin grid flex-1 grid-cols-1 gap-4 overflow-y-auto pb-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((skill) => {
-            const Icon = iconMap[skill.name] || Wrench;
-            return (
-              <motion.div
-                key={skill.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass flex flex-col rounded-2xl p-5 transition-colors hover:border-brand-primary/30"
-              >
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary/10 text-brand-highlight ring-1 ring-brand-primary/20">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="mb-1 flex items-center justify-between">
-                  <h3 className="font-semibold text-white">{skill.name}</h3>
-                  <span className="text-[10px] text-slate-500">v{skill.version}</span>
-                </div>
-                <p className="mb-4 flex-1 text-xs leading-relaxed text-slate-400">
-                  {skill.description}
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="rounded-full bg-slate-900/60 px-2 py-1 text-[10px] text-slate-400">
-                    {skill.category}
-                  </span>
-                  {skill.installed ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400">
-                      <Check className="h-3.5 w-3.5" /> 已安装
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center text-slate-400">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            加载中…
+          </div>
+        ) : (
+          <div className="scrollbar-thin grid flex-1 grid-cols-1 gap-4 overflow-y-auto pb-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((skill) => {
+              const Icon = iconMap[skill.slug] || Wrench;
+              return (
+                <motion.div
+                  key={skill.slug}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="glass flex flex-col rounded-2xl p-5 transition-colors hover:border-brand-primary/30"
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary/10 text-brand-highlight ring-1 ring-brand-primary/20">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <h3 className="font-semibold text-white">{skill.name}</h3>
+                    <span className="text-[10px] text-slate-500">v{skill.version}</span>
+                  </div>
+                  <p className="mb-4 flex-1 text-xs leading-relaxed text-slate-400">
+                    {skill.description}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="rounded-full bg-slate-900/60 px-2 py-1 text-[10px] text-slate-400">
+                      {skill.category}
                     </span>
-                  ) : (
-                    <button
-                      onClick={() => install(skill.id)}
-                      className="inline-flex items-center gap-1 rounded-xl bg-brand-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-secondary"
-                    >
-                      <Download className="h-3.5 w-3.5" /> 安装
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
+                    {skill.installed ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400">
+                        <Check className="h-3.5 w-3.5" /> 已安装
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => install(skill.slug)}
+                        className="inline-flex items-center gap-1 rounded-xl bg-brand-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-secondary"
+                      >
+                        <Download className="h-3.5 w-3.5" /> 安装
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );
