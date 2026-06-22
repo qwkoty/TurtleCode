@@ -13,8 +13,30 @@ import {
   Coins,
   Zap,
 } from "lucide-react";
-import { TurtleAvatar } from "@/components/turtle-avatar";
-import { useTurtleCodeStore, Model } from "@/lib/store";
+import { useTurtleCodeStore, Model, AgentStatus } from "@/lib/store";
+
+const statusColor: Record<AgentStatus, string> = {
+  idle: "bg-slate-500",
+  thinking: "bg-brand-accent",
+  editing: "bg-brand-primary",
+  plugin: "bg-purple-500",
+  complete: "bg-emerald-500",
+};
+
+function StatusDot({ status }: { status: AgentStatus }) {
+  return (
+    <div className="flex h-16 w-16 flex-col items-center justify-center gap-1.5">
+      <span className={`h-3 w-3 rounded-full ${statusColor[status]} animate-pulse`} />
+      <span className="text-[10px] text-slate-400">
+        {status === "idle" && "待机"}
+        {status === "thinking" && "思考"}
+        {status === "editing" && "编辑"}
+        {status === "plugin" && "插件"}
+        {status === "complete" && "完成"}
+      </span>
+    </div>
+  );
+}
 
 const models: { value: Model; label: string; desc: string }[] = [
   { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash", desc: "速度快、成本低，适合日常编码与快速迭代" },
@@ -131,7 +153,7 @@ export default function SettingsPage() {
           layout
           className="rounded-2xl bg-slate-900/40 p-3 ring-1 ring-slate-700/40"
         >
-          <TurtleAvatar status={agentStatus} size="lg" />
+          <StatusDot status={agentStatus} />
         </motion.div>
       </div>
 

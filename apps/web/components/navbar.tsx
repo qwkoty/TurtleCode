@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { TurtleAvatar } from "@/components/turtle-avatar";
-import { useTurtleCodeStore } from "@/lib/store";
 import { Bot, Code2, Puzzle, Settings } from "lucide-react";
 
 const links = [
@@ -16,12 +13,6 @@ const links = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const agentStatus = useTurtleCodeStore((s) => s.agentStatus);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   return (
     <header className="fixed left-0 right-0 top-0 z-50 glass-strong border-b border-slate-700/30">
@@ -62,7 +53,6 @@ export function Navbar() {
 
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-slate-400 sm:inline">AI Agent</span>
-          {mounted && <TurtleAvatar status={agentStatus} size="sm" />}
         </div>
       </div>
     </header>

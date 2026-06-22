@@ -15,7 +15,7 @@ import {
   FolderGit2,
   Bot,
 } from "lucide-react";
-import { TurtleAvatar } from "@/components/turtle-avatar";
+import { CrawlingTurtle } from "@/components/crawling-turtle";
 import { DiffViewer } from "@/components/diff-viewer";
 import { useTurtleCodeStore, AgentStatus, Attachment, genId } from "@/lib/store";
 import { useAgentSocket } from "@/lib/use-agent-socket";
@@ -66,6 +66,7 @@ export default function WorkspacePage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastAgentMsgRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -101,11 +102,11 @@ export default function WorkspacePage() {
   const modelLabel = model === "deepseek-v4-pro" ? "DeepSeek V4 Pro" : "DeepSeek V4 Flash";
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100vh-3.5rem)]">
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100vh-3.5rem)]">
       {/* 主工作区：移动端单列，桌面端 70/30 */}
-      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
         {/* 左侧聊天 */}
-        <section className="flex flex-1 flex-col border-r border-slate-700/30 md:w-[70%]">
+        <section className="flex min-h-0 flex-1 flex-col border-r border-slate-700/30 md:w-[70%]">
           {/* 顶部栏 */}
           <div className="flex h-12 items-center justify-between border-b border-slate-700/30 bg-slate-900/40 px-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -131,39 +132,48 @@ export default function WorkspacePage() {
           {/* 聊天历史 */}
           <div
             ref={scrollRef}
-            className="scrollbar-thin flex-1 space-y-3 overflow-y-auto p-3 sm:p-4"
+            className="scrollbar-thin relative min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4"
           >
+            <CrawlingTurtle
+              status={agentStatus}
+              containerRef={scrollRef}
+              targetRef={lastAgentMsgRef}
+            />
             <AnimatePresence initial={false}>
-              {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] ${
-                      msg.role === "user"
-                        ? "bg-brand-primary text-white"
-                        : "glass text-slate-200"
-                    }`}
+              {messages.map((msg, idx) => {
+                const isLastAgent = msg.role === "agent" && idx === messages.length - 1;
+                return (
+                  <motion.div
+                    key={msg.id}
+                    ref={isLastAgent ? lastAgentMsgRef : undefined}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.content}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {msg.attachments.map((a, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900/60 px-2 py-1 text-[10px] text-slate-300"
-                          >
-                            <Paperclip className="h-3 w-3" /> {a.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                    <div
+                      className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] ${
+                        msg.role === "user"
+                          ? "bg-brand-primary text-white"
+                          : "glass text-slate-200"
+                      }`}
+                    >
+                      {msg.content}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {msg.attachments.map((a, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-900/60 px-2 py-1 text-[10px] text-slate-300"
+                            >
+                              <Paperclip className="h-3 w-3" /> {a.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
             {isStreaming && (
               <div className="flex justify-start">
@@ -287,11 +297,10 @@ export default function WorkspacePage() {
           <span className="flex items-center gap-1">
             <BarChart3 className="h-3 w-3" /> {cacheHitRate.toFixed(1)}%
           </span>
-          <span className="hidden items-center gap-1.5 sm:flex">
+          <span className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${statusColor[agentStatus]}`} />
             {statusLabel[agentStatus]}
           </span>
-          <TurtleAvatar status={agentStatus} size="sm" />
         </div>
       </footer>
     </div>
