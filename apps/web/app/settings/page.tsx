@@ -14,7 +14,6 @@ import {
   Coins,
   Zap,
 } from "lucide-react";
-import { TurtleAvatar } from "@/components/turtle-avatar";
 import { useTurtleCodeStore, Model } from "@/lib/store";
 
 const models: { value: Model; label: string; desc: string }[] = [
@@ -37,7 +36,6 @@ export default function SettingsPage() {
     setCache,
     setSemanticCache,
     setContextCompression,
-    agentStatus,
   } = useTurtleCodeStore();
 
   const [draftKey, setDraftKey] = useState(apiKey);
@@ -128,12 +126,7 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-white">设置</h1>
           <p className="text-sm text-slate-400">配置模型、密钥与缓存策略</p>
         </div>
-        <motion.div
-          layout
-          className="rounded-2xl bg-slate-900/40 p-3 ring-1 ring-slate-700/40"
-        >
-          <TurtleAvatar status={agentStatus} size="lg" />
-        </motion.div>
+
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

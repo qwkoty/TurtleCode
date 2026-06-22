@@ -23,8 +23,6 @@ import {
   MessageSquare,
   Trash2,
 } from "lucide-react";
-import { TurtleAvatar } from "@/components/turtle-avatar";
-import { useTurtleCodeStore } from "@/lib/store";
 
 type Category =
   | "全部"
@@ -85,7 +83,6 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Category>("全部");
   const [query, setQuery] = useState("");
-  const agentStatus = useTurtleCodeStore((s) => s.agentStatus);
 
   const fetchSkills = async () => {
     try {
@@ -206,7 +203,6 @@ export default function SkillsPage() {
         <div className="glass rounded-2xl p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">已安装技能</h2>
-            <TurtleAvatar status={agentStatus} size="sm" showLabel={false} />
           </div>
           <div className="space-y-2">
             {installed.length === 0 && (

@@ -23,7 +23,7 @@ import {
   Columns,
   ChevronDown,
 } from "lucide-react";
-import { TurtleAvatar } from "@/components/turtle-avatar";
+import { CrawlingTurtle } from "@/components/crawling-turtle";
 import { DiffViewer } from "@/components/diff-viewer";
 import { CodeEditor } from "@/components/code-editor";
 import { useTurtleCodeStore, AgentStatus, Attachment, genId } from "@/lib/store";
@@ -109,6 +109,7 @@ export default function WorkspacePage() {
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastAgentMsgRef = useRef<HTMLDivElement>(null);
 
   // GitHub state
   const [githubConnected, setGithubConnected] = useState(false);
@@ -479,7 +480,7 @@ export default function WorkspacePage() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col">
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* 左侧代码区 - 桌面 */}
         <section className="hidden min-h-0 flex-col border-r border-slate-700/30 bg-slate-900/20 lg:flex lg:w-[30%]">
@@ -521,43 +522,52 @@ export default function WorkspacePage() {
           {/* 聊天历史 */}
           <div
             ref={scrollRef}
-            className="scrollbar-thin flex-1 space-y-3 overflow-y-auto p-3 sm:space-y-4 sm:p-4"
+            className="scrollbar-thin relative min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:space-y-4 sm:p-4"
           >
+            <CrawlingTurtle
+              status={agentStatus}
+              containerRef={scrollRef}
+              targetRef={lastAgentMsgRef}
+            />
             <AnimatePresence initial={false}>
-              {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 24 }}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] md:text-base ${
-                      msg.role === "user" ? "bg-brand-primary text-white" : "glass text-slate-200"
-                    }`}
+              {messages.map((msg, idx) => {
+                const isLastAgent = msg.role === "agent" && idx === messages.length - 1;
+                return (
+                  <motion.div
+                    key={msg.id}
+                    ref={isLastAgent ? lastAgentMsgRef : undefined}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 24 }}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.content}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {msg.attachments.map((a, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900/60 px-2 py-1 text-[10px] text-slate-300 sm:text-xs"
-                          >
-                            <Paperclip className="h-3 w-3" /> {a.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                    <div
+                      className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] md:text-base ${
+                        msg.role === "user" ? "bg-brand-primary text-white" : "glass text-slate-200"
+                      }`}
+                    >
+                      {msg.content}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {msg.attachments.map((a, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-900/60 px-2 py-1 text-[10px] text-slate-300 sm:text-xs"
+                            >
+                              <Paperclip className="h-3 w-3" /> {a.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
             {isStreaming && (
               <div className="flex justify-start">
                 <div className="glass flex items-center gap-2 rounded-2xl px-4 py-2 text-xs text-slate-400">
-                  <TurtleAvatar status={agentStatus} size="sm" showLabel={false} />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-brand-highlight" />
                   TurtleCode 正在输入…
                 </div>
               </div>
@@ -763,7 +773,6 @@ export default function WorkspacePage() {
             <span className={`h-2 w-2 rounded-full ${statusColor[agentStatus]}`} />
             {statusLabel[agentStatus]}
           </span>
-          <TurtleAvatar status={agentStatus} size="sm" showLabel={false} />
         </div>
       </footer>
     </div>
