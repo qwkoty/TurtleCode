@@ -126,7 +126,7 @@ export const useTurtleCodeStore = create<TurtleCodeStore>()(
           return {
             messages: [
               ...state.messages,
-              { id: crypto.randomUUID(), role: "agent", content: delta },
+              { id: genId(), role: "agent", content: delta },
             ],
           };
         }),

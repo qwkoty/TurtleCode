@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 
 const DiffEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.DiffEditor),
@@ -20,6 +21,15 @@ export function DiffViewer({
   language = "typescript",
   className = "",
 }: DiffViewerProps) {
+  const [sideBySide, setSideBySide] = useState(false);
+
+  useEffect(() => {
+    const update = () => setSideBySide(window.innerWidth >= 1024);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   return (
     <div className={`overflow-hidden rounded-xl border border-slate-700/50 ${className}`}>
       <DiffEditor
@@ -27,9 +37,11 @@ export function DiffViewer({
         modified={modified}
         language={language}
         theme="vs-dark"
+        height="100%"
+        width="100%"
         options={{
           readOnly: true,
-          renderSideBySide: true,
+          renderSideBySide: sideBySide,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           fontSize: 12,

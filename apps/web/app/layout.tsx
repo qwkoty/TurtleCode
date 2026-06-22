@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/navbar";
@@ -18,6 +18,12 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "TurtleCode - AI Agent Coding",
   description: "像海龟一样稳健可靠的 AI 编程助手",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

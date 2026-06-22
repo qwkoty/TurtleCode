@@ -16,7 +16,8 @@ export class ConfigController {
     // 不要把 apiKey 回显给前端
     const update: Partial<AppConfig> = {};
     if (body.model) update.model = body.model;
-    if (body.cacheEnabled !== undefined) update.cacheEnabled = body.cacheEnabled;
+    if (body.cacheEnabled !== undefined)
+      update.cacheEnabled = body.cacheEnabled;
     if (body.apiKey !== undefined) update.apiKey = body.apiKey;
     return this.configService.setConfig(update);
   }

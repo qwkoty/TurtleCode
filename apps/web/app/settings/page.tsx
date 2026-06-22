@@ -1,5 +1,6 @@
 "use client";
 
+import type { ElementType } from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -106,7 +107,7 @@ export default function SettingsPage() {
     value,
     color,
   }: {
-    icon: React.ElementType;
+    icon: ElementType;
     label: string;
     value: string;
     color: string;

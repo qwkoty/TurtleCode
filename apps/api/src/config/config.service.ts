@@ -23,7 +23,6 @@ export class ConfigService {
   }
 
   setConfig(partial: Partial<AppConfig>): AppConfig {
-    if (partial.model) partial.model = partial.model as Model;
     this.config = { ...this.config, ...partial };
     return this.getConfig();
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ElementType } from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -53,7 +54,7 @@ const categories: Category[] = [
   "MCP",
 ];
 
-const iconMap: Record<string, React.ElementType> = {
+const iconMap: Record<string, ElementType> = {
   github: Github,
   docker: Box,
   browser: Globe,
@@ -165,7 +166,7 @@ export default function SkillsPage() {
         <div className="glass rounded-2xl p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">已安装技能</h2>
-            <TurtleAvatar status={agentStatus} size="sm" />
+            <TurtleAvatar status={agentStatus} size="sm" showLabel={false} />
           </div>
           <div className="space-y-2">
             {installed.length === 0 && (

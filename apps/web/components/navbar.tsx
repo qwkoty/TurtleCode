@@ -62,7 +62,7 @@ export function Navbar() {
 
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-slate-400 sm:inline">AI Agent</span>
-          {mounted && <TurtleAvatar status={agentStatus} size="sm" />}
+          {mounted && <TurtleAvatar status={agentStatus} size="sm" showLabel={false} />}
         </div>
       </div>
     </header>

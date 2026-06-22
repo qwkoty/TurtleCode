@@ -19,7 +19,7 @@ async function bootstrap() {
   // 手动配置静态文件服务，避免 @nestjs/serve-static 的 path-to-regexp 兼容问题
   const staticDir = join(__dirname, '../../../apps/web/dist');
   if (existsSync(staticDir)) {
-    const expressApp = app.getHttpAdapter().getInstance() as express.Express;
+    const expressApp = app.getHttpAdapter().getInstance();
 
     // 服务 Next.js 静态资源（_next、static）
     expressApp.use(
@@ -39,7 +39,11 @@ async function bootstrap() {
 
     // SPA 回退：所有非 API、非 socket.io 请求返回对应 HTML
     expressApp.use(
-      (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      (
+        req: express.Request,
+        res: express.Response,
+        next: express.NextFunction,
+      ) => {
         if (req.method !== 'GET') return next();
         const path = req.path;
 

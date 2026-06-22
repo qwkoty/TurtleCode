@@ -94,7 +94,10 @@ export class DeepseekService {
           if (!trimmed.startsWith('data:')) continue;
 
           try {
-            const json: DeepSeekStreamChunk = JSON.parse(trimmed.slice(5).trim());
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const json: DeepSeekStreamChunk = JSON.parse(
+              trimmed.slice(5).trim(),
+            );
 
             if (json.usage) {
               promptTokens = json.usage.prompt_tokens;
@@ -134,7 +137,12 @@ export class DeepseekService {
     prompt: string,
     completion: string,
     model: Model,
-  ): { promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number } {
+  ): {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    costUsd: number;
+  } {
     const promptTokens = Math.ceil(prompt.length / 4);
     const completionTokens = Math.ceil(completion.length / 4);
     const totalTokens = promptTokens + completionTokens;

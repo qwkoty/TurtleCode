@@ -40,7 +40,11 @@ export class AgentService {
     } | null = null;
 
     try {
-      for await (const chunk of this.deepseek.streamChat(prompt, model, apiKey)) {
+      for await (const chunk of this.deepseek.streamChat(
+        prompt,
+        model,
+        apiKey,
+      )) {
         if (chunk.usage) {
           usage = chunk.usage;
         }
@@ -50,7 +54,8 @@ export class AgentService {
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'DeepSeek request failed';
+      const message =
+        error instanceof Error ? error.message : 'DeepSeek request failed';
       yield this.emit('agent:error', { chatId, message });
       return;
     }
@@ -100,14 +105,15 @@ export class AgentService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private extractFirstCodeBlock(text: string): { file: string; content: string } | null {
+  private extractFirstCodeBlock(
+    text: string,
+  ): { file: string; content: string } | null {
     const match = text.match(/```[\w]*\n?([\s\S]*?)```/);
     if (!match) return null;
     const content = match[1].trim();
     const firstLine = content.split('\n')[0];
-    const pathMatch = firstLine.match(/\/\/\s*([\w\/\.\-]+)/);
+    const pathMatch = firstLine.match(/\/\/\s*([\w/.-]+)/);
     const file = pathMatch ? pathMatch[1] : 'src/suggested-change.ts';
     return { file, content };
   }
 }
-
