@@ -13,12 +13,15 @@ import {
   Figma,
   Rocket,
   Wrench,
-  Settings,
   Power,
   Download,
   Check,
   Search,
   Loader2,
+  FolderOpen,
+  MousePointerClick,
+  MessageSquare,
+  Trash2,
 } from "lucide-react";
 import { TurtleAvatar } from "@/components/turtle-avatar";
 import { useTurtleCodeStore } from "@/lib/store";
@@ -37,10 +40,12 @@ interface Skill {
   slug: string;
   name: string;
   description: string;
-  category?: string;
-  version: string;
-  installed: boolean;
+  category?: Category;
+  package: string;
+  icon: string;
   enabled: boolean;
+  status: "not-installed" | "installing" | "installed" | "error";
+  error?: string;
 }
 
 const categories: Category[] = [
@@ -55,17 +60,19 @@ const categories: Category[] = [
 ];
 
 const iconMap: Record<string, ElementType> = {
-  github: Github,
-  docker: Box,
-  browser: Globe,
-  database: Database,
-  terminal: Terminal,
-  mcp: Cpu,
-  figma: Figma,
-  deploy: Rocket,
+  Github,
+  Box,
+  Globe,
+  Database,
+  Terminal,
+  Cpu,
+  Figma,
+  Rocket,
+  FolderOpen,
+  MousePointerClick,
+  MessageSquare,
 };
 
-const DEFAULT_VERSION = "1.0.0";
 const PROJECT_ID = "default-project";
 
 function getApiBase() {
@@ -80,80 +87,113 @@ export default function SkillsPage() {
   const [query, setQuery] = useState("");
   const agentStatus = useTurtleCodeStore((s) => s.agentStatus);
 
-  useEffect(() => {
-    const fetchSkills = async () => {
-      try {
-        const [allRes, installedRes] = await Promise.all([
-          fetch(`${getApiBase()}/api/skills`),
-          fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills`),
-        ]);
-        const all = (await allRes.json()) as Array<{
-          slug: string;
-          name: string;
-          description: string;
-          category?: string;
-          icon: string;
-        }>;
-        const installed = (await installedRes.json()) as Array<{
-          slug: string;
-          enabled: boolean;
-        }>;
-        const installedMap = new Map(installed.map((s) => [s.slug, s.enabled]));
+  const fetchSkills = async () => {
+    try {
+      const [marketRes, installedRes] = await Promise.all([
+        fetch(`${getApiBase()}/api/skills/market`),
+        fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills`),
+      ]);
+      const market = (await marketRes.json()) as Skill[];
+      const installed = (await installedRes.json()) as Skill[];
+      const installedMap = new Map(installed.map((s) => [s.slug, s]));
 
-        setSkills(
-          all.map((s) => ({
-            slug: s.slug,
-            name: s.name,
-            description: s.description,
-            category: s.category ?? "Agent",
-            version: DEFAULT_VERSION,
-            installed: installedMap.has(s.slug),
-            enabled: installedMap.get(s.slug) ?? false,
-          })),
-        );
-      } catch {
-        setSkills([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+      setSkills(
+        market.map((s) => {
+          const ins = installedMap.get(s.slug);
+          return {
+            ...s,
+            enabled: ins?.enabled ?? false,
+            status: ins?.status ?? "not-installed",
+            error: ins?.error,
+          };
+        }),
+      );
+    } catch {
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     void fetchSkills();
   }, []);
 
-  const installed = skills.filter((s) => s.installed);
+  const installed = skills.filter((s) => s.status !== "not-installed");
 
   const filtered = skills.filter((s) => {
     const matchCategory = filter === "全部" || s.category === filter;
     const matchQuery =
       s.name.toLowerCase().includes(query.toLowerCase()) ||
-      s.description.toLowerCase().includes(query.toLowerCase());
+      s.description.toLowerCase().includes(query.toLowerCase()) ||
+      s.package.toLowerCase().includes(query.toLowerCase());
     return matchCategory && matchQuery;
   });
 
-  const toggleEnabled = async (id: string, enabled: boolean) => {
+  const toggleEnabled = async (slug: string, enabled: boolean) => {
     try {
-      await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${id}/toggle`, {
+      const res = await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${slug}/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !enabled }),
       });
-      setSkills((prev) =>
-        prev.map((s) => (s.slug === id ? { ...s, enabled: !s.enabled } : s))
-      );
+      const updated = (await res.json()) as Skill | null;
+      if (updated) {
+        setSkills((prev) =>
+          prev.map((s) => (s.slug === slug ? { ...s, enabled: updated.enabled } : s))
+        );
+      }
     } catch {
       // ignore
     }
   };
 
-  const install = async (id: string) => {
+  const install = async (slug: string) => {
+    setSkills((prev) =>
+      prev.map((s) => (s.slug === slug ? { ...s, status: "installing" as const } : s))
+    );
     try {
-      await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      setSkills((prev) =>
-        prev.map((s) => (s.slug === id ? { ...s, installed: true, enabled: true } : s))
+      const res = await fetch(
+        `${getApiBase()}/api/projects/${PROJECT_ID}/skills/${slug}/install`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
       );
+      const updated = (await res.json()) as Skill | null;
+      if (updated) {
+        setSkills((prev) =>
+          prev.map((s) =>
+            s.slug === slug
+              ? { ...s, status: updated.status, enabled: updated.enabled, error: updated.error }
+              : s
+          )
+        );
+      }
+    } catch {
+      setSkills((prev) =>
+        prev.map((s) =>
+          s.slug === slug ? { ...s, status: "error" as const, error: "网络错误" } : s
+        )
+      );
+    }
+  };
+
+  const uninstall = async (slug: string) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/projects/${PROJECT_ID}/skills/${slug}`, {
+        method: "DELETE",
+      });
+      const updated = (await res.json()) as Skill | null;
+      if (updated) {
+        setSkills((prev) =>
+          prev.map((s) =>
+            s.slug === slug
+              ? { ...s, status: updated.status, enabled: updated.enabled, error: updated.error }
+              : s
+          )
+        );
+      }
     } catch {
       // ignore
     }
@@ -173,7 +213,7 @@ export default function SkillsPage() {
               <div className="text-xs text-slate-500">暂无已安装技能</div>
             )}
             {installed.map((skill) => {
-              const Icon = iconMap[skill.slug] || Wrench;
+              const Icon = iconMap[skill.icon] || Wrench;
               return (
                 <div
                   key={skill.slug}
@@ -183,28 +223,33 @@ export default function SkillsPage() {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800">
                       <Icon className="h-4 w-4 text-brand-highlight" />
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-white">{skill.name}</div>
-                      <div className="text-[10px] text-slate-400">v{skill.version}</div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">{skill.name}</div>
+                      <div className="truncate text-[10px] text-slate-400">{skill.package}</div>
+                      {skill.status === "error" && skill.error && (
+                        <div className="text-[10px] text-red-400">{skill.error}</div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => toggleEnabled(skill.slug, skill.enabled)}
+                      disabled={skill.status !== "installed"}
                       className={`rounded-lg p-1.5 transition-colors ${
                         skill.enabled
                           ? "bg-emerald-500/15 text-emerald-400"
                           : "bg-slate-800 text-slate-500"
-                      }`}
+                      } disabled:opacity-50`}
                       title={skill.enabled ? "禁用" : "启用"}
                     >
                       <Power className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
-                      title="配置"
+                      onClick={() => uninstall(skill.slug)}
+                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                      title="卸载"
                     >
-                      <Settings className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
@@ -219,14 +264,14 @@ export default function SkillsPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">技能市场</h1>
-            <p className="text-sm text-slate-400">扩展 TurtleCode 的能力边界</p>
+            <p className="text-sm text-slate-400">从真实 MCP 服务器市场安装与启用能力</p>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索技能…"
+              placeholder="搜索技能或包名…"
               className="w-full rounded-xl border border-slate-700/50 bg-slate-900/60 py-2 pl-9 pr-4 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary focus:outline-none sm:w-64"
             />
           </div>
@@ -258,7 +303,7 @@ export default function SkillsPage() {
         ) : (
           <div className="scrollbar-thin grid flex-1 grid-cols-1 gap-4 overflow-y-auto pb-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((skill) => {
-              const Icon = iconMap[skill.slug] || Wrench;
+              const Icon = iconMap[skill.icon] || Wrench;
               return (
                 <motion.div
                   key={skill.slug}
@@ -272,18 +317,38 @@ export default function SkillsPage() {
                   </div>
                   <div className="mb-1 flex items-center justify-between">
                     <h3 className="font-semibold text-white">{skill.name}</h3>
-                    <span className="text-[10px] text-slate-500">v{skill.version}</span>
+                    <span className="text-[10px] text-slate-500">{skill.package}</span>
                   </div>
                   <p className="mb-4 flex-1 text-xs leading-relaxed text-slate-400">
                     {skill.description}
                   </p>
+                  {skill.status === "error" && skill.error && (
+                    <p className="mb-2 text-[10px] text-red-400">{skill.error}</p>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="rounded-full bg-slate-900/60 px-2 py-1 text-[10px] text-slate-400">
-                      {skill.category}
+                      {skill.category || "MCP"}
                     </span>
-                    {skill.installed ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400">
-                        <Check className="h-3.5 w-3.5" /> 已安装
+                    {skill.status === "installed" ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleEnabled(skill.slug, skill.enabled)}
+                          className={`rounded-lg p-1.5 transition-colors ${
+                            skill.enabled
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : "bg-slate-800 text-slate-500"
+                          }`}
+                          title={skill.enabled ? "禁用" : "启用"}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400">
+                          <Check className="h-3.5 w-3.5" /> 已安装
+                        </span>
+                      </div>
+                    ) : skill.status === "installing" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 安装中…
                       </span>
                     ) : (
                       <button

@@ -1,0 +1,73 @@
+[
+  {
+    "slug": "github",
+    "name": "GitHub",
+    "description": "读取仓库、Issues、PR，执行创建分支、提交等操作。",
+    "package": "@modelcontextprotocol/server-github",
+    "icon": "Github",
+    "category": "Development Tools",
+    "configSchema": [
+      { "key": "githubPersonalAccessToken", "label": "GitHub PAT", "type": "secret" }
+    ]
+  },
+  {
+    "slug": "filesystem",
+    "name": "文件系统",
+    "description": "允许 AI 在指定目录内读取、写入、搜索文件。",
+    "package": "@modelcontextprotocol/server-filesystem",
+    "icon": "FolderOpen",
+    "category": "Development Tools",
+    "configSchema": [
+      { "key": "paths", "label": "允许访问的路径", "type": "array" }
+    ]
+  },
+  {
+    "slug": "fetch",
+    "name": "网页抓取",
+    "description": "让 AI 获取网页内容、调用 REST API。",
+    "package": "@modelcontextprotocol/server-fetch",
+    "icon": "Globe",
+    "category": "Browser"
+  },
+  {
+    "slug": "postgres",
+    "name": "PostgreSQL",
+    "description": "连接 PostgreSQL 数据库并执行只读查询。",
+    "package": "@modelcontextprotocol/server-postgres",
+    "icon": "Database",
+    "category": "Database",
+    "configSchema": [
+      { "key": "connectionString", "label": "连接字符串", "type": "secret" }
+    ]
+  },
+  {
+    "slug": "sqlite",
+    "name": "SQLite",
+    "description": "本地 SQLite 数据库查询与操作。",
+    "package": "@modelcontextprotocol/server-sqlite",
+    "icon": "Database",
+    "category": "Database",
+    "configSchema": [
+      { "key": "dbPath", "label": "数据库路径", "type": "text" }
+    ]
+  },
+  {
+    "slug": "puppeteer",
+    "name": "浏览器自动化",
+    "description": "使用 Puppeteer 进行页面截图、点击、表单填写。",
+    "package": "@modelcontextprotocol/server-puppeteer",
+    "icon": "MousePointerClick",
+    "category": "Browser"
+  },
+  {
+    "slug": "slack",
+    "name": "Slack",
+    "description": "发送消息、读取频道列表。",
+    "package": "@modelcontextprotocol/server-slack",
+    "icon": "MessageSquare",
+    "category": "Agent",
+    "configSchema": [
+      { "key": "slackBotToken", "label": "Slack Bot Token", "type": "secret" }
+    ]
+  }
+]

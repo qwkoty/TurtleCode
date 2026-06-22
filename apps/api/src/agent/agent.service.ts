@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DeepseekService } from '../deepseek/deepseek.service';
 import { StatsService } from '../stats/stats.service';
 import { ConfigService } from '../config/config.service';
+import { GithubService } from '../github/github.service';
 
 export type AgentStatus = 'thinking' | 'editing' | 'plugin' | 'complete';
 
@@ -16,6 +17,7 @@ export class AgentService {
     private readonly deepseek: DeepseekService,
     private readonly stats: StatsService,
     private readonly config: ConfigService,
+    private readonly github: GithubService,
   ) {}
 
   async *run(
@@ -70,10 +72,11 @@ export class AgentService {
     await this.delay(300);
 
     if (codeBlock) {
+      const original = await this.loadOriginalFile(codeBlock.file);
       yield this.emit('agent:fileChange', {
         chatId,
         file: codeBlock.file,
-        original: '// 原文件内容未加载\n',
+        original,
         modified: codeBlock.content,
       });
     }
@@ -99,6 +102,20 @@ export class AgentService {
 
   private emit(event: string, payload: Record<string, unknown>): AgentEvent {
     return { event, payload };
+  }
+
+  private async loadOriginalFile(file: string): Promise<string> {
+    const selected = this.github.getSelected();
+    if (!selected) {
+      return '// 未连接 GitHub 仓库，无法加载原文件\n';
+    }
+    const content = await this.github.getFileContent(
+      selected.owner,
+      selected.repo,
+      file,
+      selected.branch,
+    );
+    return content ?? '// 仓库中暂无该文件\n';
   }
 
   private delay(ms: number): Promise<void> {

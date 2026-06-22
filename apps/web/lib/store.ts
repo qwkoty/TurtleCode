@@ -26,6 +26,7 @@ export interface AppConfig {
   enableCache: boolean;
   enableSemanticCache: boolean;
   enableContextCompression: boolean;
+  githubToken: string;
 }
 
 export interface Stats {
@@ -35,6 +36,14 @@ export interface Stats {
   tokenUsage: number;
   cost: number;
 }
+
+export interface GitHubRepo {
+  owner: string;
+  repo: string;
+  branch: string;
+}
+
+export type CodeViewMode = "file" | "diff";
 
 export function genId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -53,8 +62,15 @@ interface TurtleCodeStore extends AppConfig, Stats {
   currentFileModified: string;
   agentStatus: AgentStatus;
   logs: string[];
+  githubRepo: GitHubRepo | null;
+  codeViewMode: CodeViewMode;
+  selectedTreeFile: string | null;
   setModel: (model: Model) => void;
   setApiKey: (apiKey: string) => void;
+  setGithubToken: (token: string) => void;
+  setGithubRepo: (repo: GitHubRepo | null) => void;
+  setCodeViewMode: (mode: CodeViewMode) => void;
+  setSelectedTreeFile: (path: string | null) => void;
   setCache: (enabled: boolean) => void;
   setSemanticCache: (enabled: boolean) => void;
   setContextCompression: (enabled: boolean) => void;
@@ -83,6 +99,7 @@ export const useTurtleCodeStore = create<TurtleCodeStore>()(
     (set) => ({
       model: "deepseek-v4-flash",
       apiKey: "",
+      githubToken: "",
       enableCache: true,
       enableSemanticCache: false,
       enableContextCompression: false,
@@ -102,9 +119,16 @@ export const useTurtleCodeStore = create<TurtleCodeStore>()(
       currentFileModified: "// 修改后的代码\n",
       agentStatus: "idle",
       logs: ["系统已就绪，等待指令..."],
+      githubRepo: null,
+      codeViewMode: "diff",
+      selectedTreeFile: null,
       ...initialStats,
       setModel: (model) => set({ model }),
       setApiKey: (apiKey) => set({ apiKey }),
+      setGithubToken: (githubToken) => set({ githubToken }),
+      setGithubRepo: (githubRepo) => set({ githubRepo }),
+      setCodeViewMode: (codeViewMode) => set({ codeViewMode }),
+      setSelectedTreeFile: (selectedTreeFile) => set({ selectedTreeFile }),
       setCache: (enableCache) => set({ enableCache }),
       setSemanticCache: (enableSemanticCache) => set({ enableSemanticCache }),
       setContextCompression: (enableContextCompression) =>
@@ -154,6 +178,7 @@ export const useTurtleCodeStore = create<TurtleCodeStore>()(
       partialize: (state) => ({
         model: state.model,
         apiKey: state.apiKey,
+        githubToken: state.githubToken,
         enableCache: state.enableCache,
         enableSemanticCache: state.enableSemanticCache,
         enableContextCompression: state.enableContextCompression,

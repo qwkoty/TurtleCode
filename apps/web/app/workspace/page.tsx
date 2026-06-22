@@ -14,12 +14,21 @@ import {
   BarChart3,
   Terminal,
   FolderGit2,
+  PanelLeft,
   PanelRight,
+  GitBranch,
+  Github,
+  FileCode,
+  Eye,
+  Columns,
+  ChevronDown,
 } from "lucide-react";
 import { TurtleAvatar } from "@/components/turtle-avatar";
 import { DiffViewer } from "@/components/diff-viewer";
+import { CodeEditor } from "@/components/code-editor";
 import { useTurtleCodeStore, AgentStatus, Attachment, genId } from "@/lib/store";
 import { useAgentSocket } from "@/lib/use-agent-socket";
+import { getLanguageFromPath } from "@/lib/lang";
 
 const statusLabel: Record<AgentStatus, string> = {
   idle: "待机中",
@@ -46,7 +55,28 @@ const attachmentTypes: { type: Attachment["type"]; icon: ElementType; name: stri
 
 const MAX_TEXTAREA_ROWS = 5;
 
+function getApiBase() {
+  if (typeof window === "undefined") return "";
+  return window.location.hostname === "localhost" ? "http://localhost:4000" : "";
+}
+
+interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  url: string;
+  private: boolean;
+  defaultBranch: string;
+}
+
+interface TreeItem {
+  path: string;
+  type: "blob" | "tree";
+  sha: string;
+}
+
 export default function WorkspacePage() {
+  const store = useTurtleCodeStore();
   const {
     messages,
     input,
@@ -63,20 +93,37 @@ export default function WorkspacePage() {
     cost,
     logs,
     isStreaming,
-  } = useTurtleCodeStore();
+    githubToken,
+    setGithubToken,
+    githubRepo,
+    setGithubRepo,
+    codeViewMode,
+    setCodeViewMode,
+    setCurrentFileChange,
+  } = store;
 
   const { send, simulateTask } = useAgentSocket();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [showSidebar, setShowSidebar] = useState(false);
+  const [showLeftPanel, setShowLeftPanel] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // GitHub state
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [githubLogin, setGithubLogin] = useState<string | null>(null);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [branches, setBranches] = useState<{ name: string }[]>([]);
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState<string>("");
+  const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const [repoTree, setRepoTree] = useState<TreeItem[]>([]);
+  const [githubLoading, setGithubLoading] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  // 文本框自适应高度
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -84,6 +131,47 @@ export default function WorkspacePage() {
     const rows = Math.min(MAX_TEXTAREA_ROWS, Math.ceil(ta.scrollHeight / 24));
     ta.rows = Math.max(1, rows);
   }, [input]);
+
+  // Restore GitHub session on mount
+  useEffect(() => {
+    if (!githubToken) return;
+    void (async () => {
+      setGithubLoading(true);
+      try {
+        const connectRes = await fetch(`${getApiBase()}/api/github/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: githubToken }),
+        });
+        const connectData = (await connectRes.json()) as {
+          success: boolean;
+          login?: string;
+          message?: string;
+        };
+        if (!connectData.success) {
+          setGithubLogin(null);
+          setGithubConnected(false);
+          return;
+        }
+        setGithubConnected(true);
+        setGithubLogin(connectData.login ?? null);
+
+        const reposRes = await fetch(`${getApiBase()}/api/github/repos`);
+        const reposData = (await reposRes.json()) as GitHubRepo[];
+        setRepos(reposData);
+
+        if (githubRepo) {
+          setSelectedRepoFullName(`${githubRepo.owner}/${githubRepo.repo}`);
+          setSelectedBranch(githubRepo.branch);
+          await loadBranches(githubRepo.owner, githubRepo.repo);
+          await loadTree(githubRepo.owner, githubRepo.repo, githubRepo.branch);
+        }
+      } finally {
+        setGithubLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSend = () => {
     if (!input.trim() && attachments.length === 0) return;
@@ -116,14 +204,304 @@ export default function WorkspacePage() {
 
   const modelLabel = model === "deepseek-v4-pro" ? "DeepSeek V4 Pro" : "DeepSeek V4 Flash";
 
+  // GitHub helpers
+  const connectGitHub = async () => {
+    if (!githubToken.trim()) return;
+    setGithubLoading(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/github/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: githubToken }),
+      });
+      const data = (await res.json()) as { success: boolean; login?: string; message?: string };
+      if (data.success) {
+        setGithubConnected(true);
+        setGithubLogin(data.login ?? null);
+        const reposRes = await fetch(`${getApiBase()}/api/github/repos`);
+        setRepos(((await reposRes.json()) as GitHubRepo[]) || []);
+      } else {
+        setGithubConnected(false);
+        setGithubLogin(null);
+        alert(data.message || "GitHub Token 无效");
+      }
+    } finally {
+      setGithubLoading(false);
+    }
+  };
+
+  const loadBranches = async (owner: string, repo: string) => {
+    const res = await fetch(`${getApiBase()}/api/github/repos/${owner}/${repo}/branches`);
+    const data = (await res.json()) as { name: string }[];
+    setBranches(data || []);
+  };
+
+  const loadTree = async (owner: string, repo: string, branch: string) => {
+    const res = await fetch(
+      `${getApiBase()}/api/github/repos/${owner}/${repo}/tree?branch=${encodeURIComponent(branch)}`,
+    );
+    const data = (await res.json()) as { tree: TreeItem[] };
+    setRepoTree((data?.tree || []).filter((t) => t.type === "blob"));
+  };
+
+  const handleRepoChange = async (fullName: string) => {
+    setSelectedRepoFullName(fullName);
+    setSelectedBranch("");
+    const repo = repos.find((r) => r.fullName === fullName);
+    if (!repo) return;
+    await loadBranches(repo.fullName.split("/")[0], repo.name);
+    setSelectedBranch(repo.defaultBranch);
+    await applyRepoSelection(repo.fullName, repo.defaultBranch);
+  };
+
+  const handleBranchChange = async (branch: string) => {
+    setSelectedBranch(branch);
+    if (!selectedRepoFullName) return;
+    await applyRepoSelection(selectedRepoFullName, branch);
+  };
+
+  const applyRepoSelection = async (fullName: string, branch: string) => {
+    const [owner, repo] = fullName.split("/");
+    await fetch(`${getApiBase()}/api/github/select`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, repo, branch }),
+    });
+    setGithubRepo({ owner, repo, branch });
+    await loadTree(owner, repo, branch);
+  };
+
+  const openTreeFile = async (path: string) => {
+    if (!githubRepo) return;
+    const res = await fetch(
+      `${getApiBase()}/api/github/repos/${githubRepo.owner}/${githubRepo.repo}/contents?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(githubRepo.branch)}`,
+    );
+    const data = (await res.json()) as { content: string | null };
+    const content = data.content ?? `// 无法读取 ${path}\n`;
+    setCurrentFileChange(path, content, content);
+    setCodeViewMode("file");
+  };
+
+  const codeLanguage = currentFile ? getLanguageFromPath(currentFile) : "typescript";
+
+  const RepoPanelBody = (
+    <div className="flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto p-3 sm:p-4">
+      {/* GitHub 连接 */}
+      <div className="space-y-2 rounded-xl border border-slate-700/30 bg-slate-900/40 p-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <Github className="h-3.5 w-3.5" /> GitHub
+        </h3>
+        {githubConnected ? (
+          <div className="text-xs text-emerald-400">已连接 {githubLogin ? `· ${githubLogin}` : ""}</div>
+        ) : (
+          <div className="space-y-2">
+            <input
+              type="password"
+              value={githubToken}
+              onChange={(e) => setGithubToken(e.target.value)}
+              placeholder="ghp_xxxxxxxxxxxx"
+              className="w-full rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-brand-primary/60 focus:outline-none"
+            />
+            <button
+              onClick={connectGitHub}
+              disabled={githubLoading}
+              className="w-full rounded-lg bg-brand-primary py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-primary/90 disabled:opacity-60"
+            >
+              {githubLoading ? "连接中…" : "连接 GitHub"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 仓库 / 分支 */}
+      <div className="space-y-2 rounded-xl border border-slate-700/30 bg-slate-900/40 p-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <FolderGit2 className="h-3.5 w-3.5" /> 当前仓库
+        </h3>
+        <div className="relative">
+          <select
+            value={selectedRepoFullName}
+            onChange={(e) => void handleRepoChange(e.target.value)}
+            disabled={!githubConnected || repos.length === 0}
+            className="w-full appearance-none rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 text-xs text-white focus:border-brand-primary/60 focus:outline-none disabled:opacity-50"
+          >
+            <option value="">选择仓库…</option>
+            {repos.map((r) => (
+              <option key={r.id} value={r.fullName}>
+                {r.fullName}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+        </div>
+        <div className="relative">
+          <select
+            value={selectedBranch}
+            onChange={(e) => void handleBranchChange(e.target.value)}
+            disabled={!selectedRepoFullName || branches.length === 0}
+            className="w-full appearance-none rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 text-xs text-white focus:border-brand-primary/60 focus:outline-none disabled:opacity-50"
+          >
+            <option value="">选择分支…</option>
+            {branches.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <GitBranch className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+        </div>
+        {githubRepo && (
+          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+            <span className="truncate rounded bg-slate-800 px-2 py-1 text-brand-highlight">
+              {githubRepo.owner}/{githubRepo.repo}
+            </span>
+            <span className="rounded bg-slate-800 px-2 py-1">{githubRepo.branch}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 当前改动文件 */}
+      <div className="space-y-2 rounded-xl border border-slate-700/30 bg-slate-900/40 p-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <FileCode className="h-3.5 w-3.5" /> 改动文件
+        </h3>
+        {currentFile ? (
+          <button
+            onClick={() => {
+              setCodeViewMode("diff");
+              setShowRightPanel(false);
+            }}
+            className="flex w-full items-center justify-between rounded-lg bg-brand-primary/10 px-2 py-1.5 text-xs text-brand-highlight ring-1 ring-brand-primary/30 transition-colors hover:bg-brand-primary/20"
+          >
+            <span className="truncate">{currentFile}</span>
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              className="h-1.5 w-1.5 rounded-full bg-brand-highlight"
+            />
+          </button>
+        ) : (
+          <div className="rounded-lg bg-slate-950/40 px-2 py-1.5 text-xs text-slate-500">暂无文件变更</div>
+        )}
+      </div>
+
+      {/* 仓库文件树 */}
+      <div className="flex min-h-0 flex-1 flex-col space-y-2 rounded-xl border border-slate-700/30 bg-slate-900/40 p-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <Columns className="h-3.5 w-3.5" /> 仓库文件
+        </h3>
+        <div className="scrollbar-thin min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          {repoTree.length === 0 && (
+            <div className="text-xs text-slate-600">选择仓库后显示文件树</div>
+          )}
+          {repoTree.slice(0, 80).map((item) => (
+            <button
+              key={item.sha + item.path}
+              onClick={() => void openTreeFile(item.path)}
+              className="w-full truncate rounded px-1.5 py-1 text-left text-[10px] text-slate-400 hover:bg-slate-800 hover:text-white"
+              title={item.path}
+            >
+              {item.path}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 日志 */}
+      <div className="flex min-h-0 flex-[0.4] flex-col space-y-2 rounded-xl border border-slate-700/30 bg-slate-900/40 p-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <Terminal className="h-3.5 w-3.5" /> 代理日志
+        </h3>
+        <div className="scrollbar-thin min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg bg-slate-950/40 p-2 text-[10px] text-slate-400 sm:text-xs">
+          {logs.length === 0 && <div className="text-slate-600">等待任务开始…</div>}
+          {logs.slice(0, 40).map((log, i) => (
+            <div key={i} className="font-mono leading-tight">
+              {log}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const CodePanelBody = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 标签栏 */}
+      <div className="flex h-12 min-h-[3rem] items-center justify-between border-b border-slate-700/30 px-3">
+        <div className="flex items-center gap-1 rounded-lg bg-slate-900/60 p-1">
+          <button
+            onClick={() => setCodeViewMode("file")}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
+              codeViewMode === "file"
+                ? "bg-brand-primary text-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <FileCode className="h-3.5 w-3.5" /> 当前文件
+          </button>
+          <button
+            onClick={() => setCodeViewMode("diff")}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
+              codeViewMode === "diff"
+                ? "bg-brand-primary text-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Columns className="h-3.5 w-3.5" /> Diff 对比
+          </button>
+        </div>
+        {currentFile && (
+          <span className="max-w-[50%] truncate text-[10px] text-slate-400" title={currentFile}>
+            {currentFile}
+          </span>
+        )}
+      </div>
+
+      {/* 编辑器 / Diff */}
+      <div className="min-h-0 flex-1 p-3">
+        {!currentFile ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-slate-700/30 bg-slate-900/20 p-4 text-center text-xs text-slate-500">
+            <Eye className="h-8 w-8 text-slate-600" />
+            <p>Agent 生成或选择文件后将在此展示代码</p>
+          </div>
+        ) : codeViewMode === "file" ? (
+          <CodeEditor value={currentFileModified} language={codeLanguage} className="h-full" />
+        ) : (
+          <DiffViewer
+            original={currentFileOriginal}
+            modified={currentFileModified}
+            language={codeLanguage}
+            className="h-full"
+          />
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        {/* 左侧聊天 */}
-        <section className="flex min-h-0 flex-1 flex-col border-r border-slate-700/30 md:w-[70%]">
-          {/* 顶部栏 */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {/* 左侧代码区 - 桌面 */}
+        <section className="hidden min-h-0 flex-col border-r border-slate-700/30 bg-slate-900/20 lg:flex lg:w-[30%]">
+          <div className="flex h-12 min-h-[3rem] items-center border-b border-slate-700/30 px-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Code className="h-4 w-4 text-brand-highlight" /> 代码
+            </h2>
+          </div>
+          {CodePanelBody}
+        </section>
+
+        {/* 中间聊天区 */}
+        <section className="flex min-h-0 flex-1 flex-col lg:w-[40%]">
           <div className="flex h-12 min-h-[3rem] items-center justify-between border-b border-slate-700/30 bg-slate-900/40 px-3 sm:px-4">
             <div className="flex items-center gap-2 text-xs text-slate-400">
+              <button
+                onClick={() => setShowLeftPanel(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800/60 text-slate-300 transition-colors hover:bg-slate-800 lg:hidden"
+                aria-label="打开代码区"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
               <span className="rounded-full bg-brand-primary/10 px-2.5 py-1 text-brand-highlight ring-1 ring-brand-primary/20">
                 {modelLabel}
               </span>
@@ -132,11 +510,11 @@ export default function WorkspacePage() {
               </span>
             </div>
             <button
-              onClick={() => setShowSidebar((v) => !v)}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-800/60 px-3 text-xs text-slate-300 transition-colors hover:bg-slate-800 active:scale-95 md:hidden"
+              onClick={() => setShowRightPanel(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800/60 text-slate-300 transition-colors hover:bg-slate-800 lg:hidden"
+              aria-label="打开仓库区"
             >
               <PanelRight className="h-4 w-4" />
-              代理
             </button>
           </div>
 
@@ -156,9 +534,7 @@ export default function WorkspacePage() {
                 >
                   <div
                     className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] md:text-base ${
-                      msg.role === "user"
-                        ? "bg-brand-primary text-white"
-                        : "glass text-slate-200"
+                      msg.role === "user" ? "bg-brand-primary text-white" : "glass text-slate-200"
                     }`}
                   >
                     {msg.content}
@@ -214,7 +590,6 @@ export default function WorkspacePage() {
             )}
 
             <div className="flex items-end gap-2 rounded-2xl border border-slate-700/50 bg-slate-900/60 p-2 focus-within:border-brand-primary/60 focus-within:ring-1 focus-within:ring-brand-primary/30">
-              {/* 附件菜单 */}
               <div className="relative">
                 <button
                   onClick={() => setShowAttachMenu((v) => !v)}
@@ -231,7 +606,7 @@ export default function WorkspacePage() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setShowAttachMenu(false)}
-                        className="fixed inset-0 z-10 md:hidden"
+                        className="fixed inset-0 z-10 lg:hidden"
                       />
                       <motion.div
                         initial={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -289,42 +664,77 @@ export default function WorkspacePage() {
           </div>
         </section>
 
-        {/* 桌面端右侧代理工作区 */}
-        <section className="hidden w-[30%] flex-col border-l border-slate-700/30 bg-slate-900/20 md:flex">
-          <SidebarContent
-            currentFile={currentFile}
-            currentFileOriginal={currentFileOriginal}
-            currentFileModified={currentFileModified}
-            logs={logs}
-            onClose={() => setShowSidebar(false)}
-          />
+        {/* 右侧仓库区 - 桌面 */}
+        <section className="hidden min-h-0 flex-col border-l border-slate-700/30 bg-slate-900/20 lg:flex lg:w-[30%]">
+          <div className="flex h-12 min-h-[3rem] items-center border-b border-slate-700/30 px-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <FolderGit2 className="h-4 w-4 text-brand-highlight" /> 仓库 / 分支
+            </h2>
+          </div>
+          {RepoPanelBody}
         </section>
 
-        {/* 移动端抽屉 */}
+        {/* 移动端左侧代码抽屉 */}
         <AnimatePresence>
-          {showSidebar && (
+          {showLeftPanel && (
             <>
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                onClick={() => setShowSidebar(false)}
-                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+                onClick={() => setShowLeftPanel(false)}
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+              />
+              <motion.section
+                initial={{ x: "-100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "-100%" }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="fixed inset-y-0 left-0 z-50 flex w-[88%] flex-col border-r border-slate-700/30 bg-slate-950/95 backdrop-blur-xl sm:w-[380px] lg:hidden"
+              >
+                <div className="flex h-12 min-h-[3rem] items-center justify-between border-b border-slate-700/30 px-4">
+                  <h2 className="text-sm font-semibold text-white">代码</h2>
+                  <button
+                    onClick={() => setShowLeftPanel(false)}
+                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                {CodePanelBody}
+              </motion.section>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* 移动端右侧仓库抽屉 */}
+        <AnimatePresence>
+          {showRightPanel && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowRightPanel(false)}
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
               />
               <motion.section
                 initial={{ x: "100%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="fixed inset-y-0 right-0 z-50 flex w-[88%] flex-col border-l border-slate-700/30 bg-slate-950/95 backdrop-blur-xl sm:w-[380px] md:hidden"
+                className="fixed inset-y-0 right-0 z-50 flex w-[88%] flex-col border-l border-slate-700/30 bg-slate-950/95 backdrop-blur-xl sm:w-[380px] lg:hidden"
               >
-                <SidebarContent
-                  currentFile={currentFile}
-                  currentFileOriginal={currentFileOriginal}
-                  currentFileModified={currentFileModified}
-                  logs={logs}
-                  onClose={() => setShowSidebar(false)}
-                />
+                <div className="flex h-12 min-h-[3rem] items-center justify-between border-b border-slate-700/30 px-4">
+                  <h2 className="text-sm font-semibold text-white">仓库 / 分支</h2>
+                  <button
+                    onClick={() => setShowRightPanel(false)}
+                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                {RepoPanelBody}
               </motion.section>
             </>
           )}
@@ -341,6 +751,12 @@ export default function WorkspacePage() {
           <span className="flex items-center gap-1">
             <BarChart3 className="h-3 w-3" /> {cacheHitRate.toFixed(1)}%
           </span>
+          {githubRepo && (
+            <span className="hidden items-center gap-1 md:flex">
+              <GitBranch className="h-3 w-3" />
+              <span className="truncate">{githubRepo.repo}:{githubRepo.branch}</span>
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
           <span className="flex items-center gap-1.5">
@@ -351,87 +767,5 @@ export default function WorkspacePage() {
         </div>
       </footer>
     </div>
-  );
-}
-
-function SidebarContent({
-  currentFile,
-  currentFileOriginal,
-  currentFileModified,
-  logs,
-  onClose,
-}: {
-  currentFile: string | null;
-  currentFileOriginal: string;
-  currentFileModified: string;
-  logs: string[];
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <div className="flex h-12 min-h-[3rem] items-center justify-between border-b border-slate-700/30 px-4 md:hidden">
-        <span className="text-sm font-semibold text-white">代理工作区</span>
-        <button
-          onClick={onClose}
-          className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white active:scale-95"
-          aria-label="关闭"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* 当前编辑文件 */}
-      <div className="border-b border-slate-700/30 p-3 sm:p-4">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <Code className="h-3.5 w-3.5" /> 正在编辑
-        </h3>
-        <div className="space-y-1.5">
-          {currentFile ? (
-            <div className="flex items-center justify-between rounded-lg bg-brand-primary/10 px-2 py-1.5 text-xs text-brand-highlight ring-1 ring-brand-primary/30">
-              <span className="truncate">{currentFile}</span>
-              <motion.span
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1.2, repeat: Infinity }}
-                className="h-1.5 w-1.5 rounded-full bg-brand-highlight"
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg bg-slate-900/40 px-2 py-1.5 text-xs text-slate-500">
-              暂无文件变更
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Diff 查看器 */}
-      <div className="flex min-h-0 flex-1 flex-col border-b border-slate-700/30 p-3 sm:p-4">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <FolderGit2 className="h-3.5 w-3.5" /> 代码变更
-        </h3>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <DiffViewer
-            original={currentFileOriginal}
-            modified={currentFileModified}
-            language="typescript"
-            className="h-full"
-          />
-        </div>
-      </div>
-
-      {/* 状态日志 */}
-      <div className="flex min-h-0 flex-[0.4] flex-col p-3 sm:p-4">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <Terminal className="h-3.5 w-3.5" /> 代理日志
-        </h3>
-        <div className="scrollbar-thin min-h-0 flex-1 space-y-1 overflow-y-auto rounded-xl border border-slate-700/30 bg-slate-950/40 p-2 text-[10px] text-slate-400 sm:text-xs">
-          {logs.length === 0 && <div className="text-slate-600">等待任务开始…</div>}
-          {logs.slice(0, 40).map((log, i) => (
-            <div key={i} className="font-mono leading-tight">
-              {log}
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
   );
 }
