@@ -33,9 +33,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN" className={`${jetbrains.variable} ${manrope.variable}`}>
-      <body className="antialiased">
+      <body className="flex min-h-dvh flex-col antialiased">
         <Navbar />
-        <main className="pt-14 sm:pt-14">{children}</main>
+        <main className="flex flex-1 flex-col pt-14 sm:pt-14">{children}</main>
       </body>
     </html>
   );

@@ -480,7 +480,7 @@ export default function WorkspacePage() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* 左侧代码区 - 桌面 */}
         <section className="hidden min-h-0 flex-col border-r border-slate-700/30 bg-slate-900/20 lg:flex lg:w-[30%]">

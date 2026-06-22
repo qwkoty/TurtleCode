@@ -197,7 +197,7 @@ export default function SkillsPage() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-7xl gap-6 px-4 py-6 sm:px-6">
+    <div className="mx-auto flex min-h-0 flex-1 max-w-7xl gap-6 px-4 py-6 sm:px-6">
       {/* 左侧已安装列表 */}
       <aside className="hidden w-72 flex-col gap-4 md:flex">
         <div className="glass rounded-2xl p-4">
