@@ -143,10 +143,10 @@ export class DeepseekService {
   }
 
   calculateCost(totalTokens: number, model: Model): number {
-    // DeepSeek official pricing (input + output averaged per token)
-    // deepseek-chat: ~$0.0005 / 1K tokens
-    // deepseek-reasoner: ~$0.0028 / 1K tokens
-    const rate = model === 'deepseek-reasoner' ? 0.0000028 : 0.0000005;
+    // DeepSeek V4 official pricing (input + output averaged per token)
+    // deepseek-v4-flash: ~$0.0001 / 1K tokens
+    // deepseek-v4-pro: ~$0.0015 / 1K tokens
+    const rate = model === 'deepseek-v4-pro' ? 0.0000015 : 0.0000001;
     return Number((totalTokens * rate).toFixed(6));
   }
 }

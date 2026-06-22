@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 
-export type Model = 'deepseek-chat' | 'deepseek-reasoner';
+export type Model = 'deepseek-v4-flash' | 'deepseek-v4-pro';
 
 export interface AppConfig {
   model: Model;
@@ -13,7 +13,7 @@ export interface AppConfig {
 export class ConfigService {
   private readonly logger = new Logger(ConfigService.name);
   private config: AppConfig = {
-    model: (process.env.DEFAULT_MODEL as Model) || 'deepseek-chat',
+    model: (process.env.DEFAULT_MODEL as Model) || 'deepseek-v4-flash',
     apiKey: process.env.DEEPSEEK_API_KEY || '',
     cacheEnabled: true,
   };
@@ -44,7 +44,7 @@ export class ConfigService {
       const res = await axios.post(
         'https://api.deepseek.com/chat/completions',
         {
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
           messages: [{ role: 'user', content: 'hi' }],
           max_tokens: 1,
         },

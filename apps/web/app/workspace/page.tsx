@@ -98,7 +98,7 @@ export default function WorkspacePage() {
     ]);
   };
 
-  const modelLabel = model === "deepseek-reasoner" ? "DeepSeek Reasoner" : "DeepSeek Chat";
+  const modelLabel = model === "deepseek-v4-pro" ? "DeepSeek V4 Pro" : "DeepSeek V4 Flash";
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100vh-3.5rem)]">

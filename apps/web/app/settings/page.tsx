@@ -17,8 +17,8 @@ import { TurtleAvatar } from "@/components/turtle-avatar";
 import { useTurtleCodeStore, Model } from "@/lib/store";
 
 const models: { value: Model; label: string; desc: string }[] = [
-  { value: "deepseek-chat", label: "DeepSeek Chat", desc: "通用对话，快速响应，适合日常编码" },
-  { value: "deepseek-reasoner", label: "DeepSeek Reasoner", desc: "推理增强，适合复杂算法与深度分析" },
+  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash", desc: "速度快、成本低，适合日常编码与快速迭代" },
+  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro", desc: "能力更强，适合复杂架构与深度推理" },
 ];
 
 export default function SettingsPage() {
